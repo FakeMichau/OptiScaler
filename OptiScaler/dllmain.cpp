@@ -332,7 +332,7 @@ void WINAPI hkGetPhysicalDeviceProperties(VkPhysicalDevice physical_device, VkPh
 {
 	pfn_vkGetPhysicalDeviceProperties(physical_device, properties);
 
-	std::strcpy(properties->deviceName, "NVIDIA GeForce RTX 4090");
+	std::strcpy_s(properties->deviceName, 54, "NVIDIA GeForce RTX 4090");
 	properties->vendorID = 0x10de;
 	properties->deviceID = 0x2684;
 	properties->driverVersion = VK_MAKE_API_VERSION(551, 76, 0, 0);
@@ -342,7 +342,7 @@ void WINAPI hkGetPhysicalDeviceProperties2(VkPhysicalDevice phys_dev, VkPhysical
 {
 	pfn_vkGetPhysicalDeviceProperties2(phys_dev, properties2);
 
-	std::strcpy(properties2->properties.deviceName, "NVIDIA GeForce RTX 4090");
+	std::strcpy_s(properties2->properties.deviceName, 54, "NVIDIA GeForce RTX 4090");
 	properties2->properties.vendorID = 0x10de;
 	properties2->properties.deviceID = 0x2684;
 	properties2->properties.driverVersion = VK_MAKE_API_VERSION(551, 76, 0, 0);
@@ -353,7 +353,7 @@ void WINAPI hkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice phys_dev, VkPhysi
 {
 	pfn_vkGetPhysicalDeviceProperties2KHR(phys_dev, properties2);
 
-	std::strcpy(properties2->properties.deviceName, "NVIDIA GeForce RTX 4090");
+	std::strcpy_s(properties2->properties.deviceName, 54, "NVIDIA GeForce RTX 4090");
 	properties2->properties.vendorID = 0x10de;
 	properties2->properties.deviceID = 0x2684;
 	properties2->properties.driverVersion = VK_MAKE_API_VERSION(551, 76, 0, 0);
