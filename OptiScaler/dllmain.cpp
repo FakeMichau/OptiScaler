@@ -19,6 +19,14 @@ PFN_LoadLibraryW o_LoadLibraryW = nullptr;
 PFN_LoadLibraryExA o_LoadLibraryExA = nullptr;
 PFN_LoadLibraryExW o_LoadLibraryExW = nullptr;
 
+PFN_vkGetPhysicalDeviceProperties pfn_vkGetPhysicalDeviceProperties = nullptr;
+PFN_vkGetPhysicalDeviceProperties2 pfn_vkGetPhysicalDeviceProperties2 = nullptr;
+PFN_vkGetPhysicalDeviceProperties2KHR pfn_vkGetPhysicalDeviceProperties2KHR = nullptr;
+
+bool pfn_vkGetPhysicalDeviceProperties_hooked = false;
+bool pfn_vkGetPhysicalDeviceProperties2_hooked = false;
+bool pfn_vkGetPhysicalDeviceProperties2KHR_hooked = false;
+
 std::string nvngxA("nvngx.dll");
 std::string nvngxExA("nvngx");
 std::wstring nvngxW(L"nvngx.dll");
@@ -384,6 +392,20 @@ void AttachHooks()
 
 		if (o_LoadLibraryExW)
 			DetourAttach(&(PVOID&)o_LoadLibraryExW, hkLoadLibraryExW);
+
+		// Detour vulkan
+		pfn_vkGetPhysicalDeviceProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(DetourFindFunction("vulkan-1.dll", "vkGetPhysicalDeviceProperties"));
+		pfn_vkGetPhysicalDeviceProperties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(DetourFindFunction("vulkan-1.dll", "vkGetPhysicalDeviceProperties2"));
+		pfn_vkGetPhysicalDeviceProperties2KHR = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2KHR>(DetourFindFunction("vulkan-1.dll", "vkGetPhysicalDeviceProperties2KHR"));
+
+		if (pfn_vkGetPhysicalDeviceProperties)
+			pfn_vkGetPhysicalDeviceProperties_hooked = (DetourAttach(&(PVOID&)pfn_vkGetPhysicalDeviceProperties, hkGetPhysicalDeviceProperties) == 0);
+
+		if (pfn_vkGetPhysicalDeviceProperties2)
+			pfn_vkGetPhysicalDeviceProperties2_hooked = (DetourAttach(&(PVOID&)pfn_vkGetPhysicalDeviceProperties2, hkGetPhysicalDeviceProperties2) == 0);
+
+		if (pfn_vkGetPhysicalDeviceProperties2KHR)
+			pfn_vkGetPhysicalDeviceProperties2KHR_hooked = (DetourAttach(&(PVOID&)pfn_vkGetPhysicalDeviceProperties2KHR, hkGetPhysicalDeviceProperties2KHR) == 0);
 
 		DetourTransactionCommit();
 	}
