@@ -45,7 +45,7 @@ std::wstring dllNameW;
 std::wstring dllNameExW;
 
 void AttachHooks();
-void DeatachHooks();
+void DetachHooks();
 
 HMODULE LoadNvApi()
 {
@@ -700,7 +700,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
 	case DLL_PROCESS_DETACH:
 		CloseLogger();
-		DeatachHooks();
+		DetachHooks();
 
 		break;
 
