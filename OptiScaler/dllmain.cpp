@@ -328,7 +328,38 @@ HMODULE hkLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 	return result;
 }
 
-void DeatachHooks()
+void WINAPI hkGetPhysicalDeviceProperties(VkPhysicalDevice physical_device, VkPhysicalDeviceProperties* properties)
+{
+	pfn_vkGetPhysicalDeviceProperties(physical_device, properties);
+
+	std::strcpy(properties->deviceName, "NVIDIA GeForce RTX 4090");
+	properties->vendorID = 0x10de;
+	properties->deviceID = 0x2684;
+	properties->driverVersion = VK_MAKE_API_VERSION(551, 76, 0, 0);
+}
+
+void WINAPI hkGetPhysicalDeviceProperties2(VkPhysicalDevice phys_dev, VkPhysicalDeviceProperties2* properties2)
+{
+	pfn_vkGetPhysicalDeviceProperties2(phys_dev, properties2);
+
+	std::strcpy(properties2->properties.deviceName, "NVIDIA GeForce RTX 4090");
+	properties2->properties.vendorID = 0x10de;
+	properties2->properties.deviceID = 0x2684;
+	properties2->properties.driverVersion = VK_MAKE_API_VERSION(551, 76, 0, 0);
+
+}
+
+void WINAPI hkGetPhysicalDeviceProperties2KHR(VkPhysicalDevice phys_dev, VkPhysicalDeviceProperties2* properties2)
+{
+	pfn_vkGetPhysicalDeviceProperties2KHR(phys_dev, properties2);
+
+	std::strcpy(properties2->properties.deviceName, "NVIDIA GeForce RTX 4090");
+	properties2->properties.vendorID = 0x10de;
+	properties2->properties.deviceID = 0x2684;
+	properties2->properties.driverVersion = VK_MAKE_API_VERSION(551, 76, 0, 0);
+}
+
+void DetachHooks()
 {
 	if (o_LoadLibraryA != nullptr || o_LoadLibraryW != nullptr || o_LoadLibraryExA != nullptr || o_LoadLibraryExW != nullptr)
 	{
@@ -359,6 +390,15 @@ void DeatachHooks()
 			DetourDetach(&(PVOID&)o_LoadLibraryExW, hkLoadLibraryExW);
 			o_LoadLibraryExW = nullptr;
 		}
+
+		if (pfn_vkGetPhysicalDeviceProperties_hooked)
+			DetourDetach(&(PVOID&)pfn_vkGetPhysicalDeviceProperties, hkGetPhysicalDeviceProperties);
+
+		if (pfn_vkGetPhysicalDeviceProperties2_hooked)
+			DetourDetach(&(PVOID&)pfn_vkGetPhysicalDeviceProperties2, hkGetPhysicalDeviceProperties2);
+
+		if (pfn_vkGetPhysicalDeviceProperties2KHR_hooked)
+			DetourDetach(&(PVOID&)pfn_vkGetPhysicalDeviceProperties2KHR, hkGetPhysicalDeviceProperties2KHR);
 
 		DetourTransactionCommit();
 
