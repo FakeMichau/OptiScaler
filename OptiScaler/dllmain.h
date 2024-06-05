@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "detours/detours.h"
 #include "dxgi1_6.h"
+#include "vulkan/vulkan.hpp"
 
 struct shared
 {

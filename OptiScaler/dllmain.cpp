@@ -8,6 +8,7 @@
 #include "imgui/imgui_overlay_dx12.h"
 
 #include "detours/detours.h"
+#include <vulkan/vulkan_core.h>
 
 typedef HMODULE(WINAPI* PFN_LoadLibraryA)(LPCSTR lpLibFileName);
 typedef HMODULE(WINAPI* PFN_LoadLibraryW)(LPCWSTR lpLibFileName);
