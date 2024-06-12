@@ -43,7 +43,7 @@ jobs:
       run: msbuild /m /p:Configuration=${{env.BUILD_CONFIGURATION}} ${{env.SOLUTION_FILE_PATH}}
 
     - name: Compress the artifact 
-      run: 7z a -m0=bcj -m1=flzma2 -mx=9 ${{ github.workspace }}\OptiScaler.7z ${{ github.workspace }}\x64\Release\a\*.*
+      run: 7z a ${{ github.workspace }}\OptiScaler.7z ${{ github.workspace }}\x64\Release\a\*.*
 
     - uses: actions/upload-artifact@v4
       with:
