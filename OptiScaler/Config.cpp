@@ -320,7 +320,7 @@ bool Config::Reload(std::filesystem::path iniPath)
 
             DE_Generator = readString("FrameGeneration", "Generator", true);
 
-            if (DE_Generator.has_value() && DE_Generator.value() != "fsr30" DE_Generator.value() != "fsr31" && DE_Generator.value() != "dlssg")
+            if (DE_Generator.has_value() && DE_Generator.value() != "fsr30" && DE_Generator.value() != "fsr31" && DE_Generator.value() != "dlssg")
                 DE_Generator.reset();
 
             buffer = readString("FrameGeneration", "FramerateLimit", true);
