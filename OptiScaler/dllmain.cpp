@@ -727,6 +727,35 @@ static VkResult hkvkEnumerateInstanceExtensionProperties(const char* pLayerName,
 
 #pragma endregion
 
+#pragma region DLSSG related Hooks
+
+static int hkD3DKMTQueryAdapterInfo(const D3DKMT_QUERYADAPTERINFO* data) {
+    auto result = o_D3DKMTQueryAdapterInfo(data);
+    D3DKMT_WDDM_2_7_CAPS* d3dkmt_wddm_2_7_caps;
+    if (data->Type == KMTQAITYPE_WDDM_2_7_CAPS) {
+        LOG_INFO("Spoofing HAGS");
+        d3dkmt_wddm_2_7_caps = static_cast<D3DKMT_WDDM_2_7_CAPS*>(data->pPrivateDriverData);
+        d3dkmt_wddm_2_7_caps->HwSchSupported = 1;
+        d3dkmt_wddm_2_7_caps->HwSchEnabled = 1;
+        d3dkmt_wddm_2_7_caps->HwSchEnabledByDefault = 0;
+        d3dkmt_wddm_2_7_caps->IndependentVidPnVSyncControl = 0;
+    }
+    return result;
+}
+
+static int hkslSetTag(uint64_t viewport, ResourceTag* tags, uint32_t numTags, uint64_t cmdBuffer) {
+    // HUDless, STATE_NON_PIXEL_SHADER_RESOURCE | STATE_PIXEL_SHADER_RESOURCE
+    if (Config::Instance()->Cyberpunk && tags->type == 2 && tags->resource->state == 0xC0 && numTags == 1) {
+        // STATE_UNORDERED_ACCESS
+        tags->resource->state = 0x8;
+        LOG_TRACE("Changing hudless resource state");
+    }
+    auto result = o_slSetTag(viewport, tags, numTags, cmdBuffer);
+    return result;
+}
+
+#pragma endregion
+
 static void DetachHooks()
 {
     if (!isNvngxMode)
@@ -840,6 +869,11 @@ static void DetachHooks()
             }
         }
 
+        if (Config::Instance()->SpoofHAGS.value_or(false) || Config::Instance()->DLSSGMod.value_or(false)) {
+            DetourDetach(&(PVOID&)o_D3DKMTQueryAdapterInfo, hkD3DKMTQueryAdapterInfo);
+            o_D3DKMTQueryAdapterInfo = nullptr;
+        }
+
         DetourTransactionCommit();
 
         FreeLibrary(shared.dll);
@@ -945,6 +979,22 @@ static void AttachHooks()
 
             DetourTransactionCommit();
         }
+    }
+
+    if (Config::Instance()->SpoofHAGS.value_or(false) || Config::Instance()->DLSSGMod.value_or(false)) {
+        o_D3DKMTQueryAdapterInfo = reinterpret_cast<PFN_D3DKMTQueryAdapterInfo>(DetourFindFunction("gdi32.dll", "D3DKMTQueryAdapterInfo"));
+        o_slSetTag = reinterpret_cast<PFN_slSetTag>(DetourFindFunction("sl.interposer.dll", "slSetTag"));
+
+        DetourTransactionBegin();
+        DetourUpdateThread(GetCurrentThread());
+
+        if (o_D3DKMTQueryAdapterInfo != nullptr)
+            DetourAttach(&(PVOID&)o_D3DKMTQueryAdapterInfo, hkD3DKMTQueryAdapterInfo);
+
+        if (o_slSetTag != nullptr)
+            DetourAttach(&(PVOID&)o_slSetTag, hkslSetTag);
+
+         DetourTransactionCommit();
     }
 }
 
@@ -1325,6 +1375,14 @@ static void CheckWorkingMode()
     LOG_ERROR("Unsupported dll name: {0}", filename);
 }
 
+static void CheckQuirks() {
+    auto exePathFilename = Util::ExePath().filename();
+    if (exePathFilename == "Cyberpunk2077.exe") {
+        Config::Instance()->Cyberpunk = true;
+        LOG_INFO("Enabling a quirk for Cyberpunk");
+    }
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
     switch (ul_reason_for_call)
@@ -1408,6 +1466,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             spdlog::info("");
             CheckWorkingMode();
             spdlog::info("");
+
+            CheckQuirks();
 
             for (size_t i = 0; i < 300; i++)
             {

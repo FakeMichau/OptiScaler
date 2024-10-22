@@ -114,6 +114,11 @@ bool Config::Reload(std::filesystem::path iniPath)
                 RenderPresetUltraPerformance.reset();
         }
 
+        // DLSSG
+        {
+            SpoofHAGS = readBool("DLSSG", "SpoofHAGS");
+            DLSSGMod = readBool("DLSSG", "DLSSGMod");
+        }
 
         // Logging
         {
@@ -500,6 +505,12 @@ bool Config::SaveIni()
         ini.SetValue("DLSS", "RenderPresetBalanced", GetIntValue(Instance()->RenderPresetBalanced).c_str());
         ini.SetValue("DLSS", "RenderPresetPerformance", GetIntValue(Instance()->RenderPresetPerformance).c_str());
         ini.SetValue("DLSS", "RenderPresetUltraPerformance", GetIntValue(Instance()->RenderPresetUltraPerformance).c_str());
+    }
+
+    // DLSSG
+    {
+        ini.SetValue("DLSSG", "SpoofHAGS", GetBoolValue(Instance()->SpoofHAGS).c_str());
+        ini.SetValue("DLSSG", "DLSSGMod", GetBoolValue(Instance()->DLSSGMod).c_str());
     }
 
     // Sharpness

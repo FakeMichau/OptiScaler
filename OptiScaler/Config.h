@@ -56,6 +56,11 @@ public:
 	std::optional<uint32_t> RenderPresetPerformance;
 	std::optional<uint32_t> RenderPresetUltraPerformance;
 
+	// DLSSG
+	std::optional<bool> SpoofHAGS;
+	std::optional<bool> DLSSGMod;
+	bool Cyberpunk = false;	// could become an enum in the future
+
 	// CAS
 	std::optional<bool> RcasEnabled;
 	std::optional<bool> MotionSharpnessEnabled;

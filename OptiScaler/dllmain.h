@@ -41,6 +41,74 @@ void AttachToFactory(IUnknown* unkFactory);
 
 #pragma endregion
 
+#pragma region DLSSG
+
+typedef struct _D3DKMT_WDDM_2_7_CAPS
+{
+    union
+    {
+        struct
+        {
+            UINT HwSchSupported : 1;
+            UINT HwSchEnabled : 1;
+            UINT HwSchEnabledByDefault : 1;
+            UINT IndependentVidPnVSyncControl : 1;
+            UINT Reserved : 28;
+        };
+        UINT Value;
+    };
+} D3DKMT_WDDM_2_7_CAPS;
+
+typedef enum _KMTQUERYADAPTERINFOTYPE
+{
+    KMTQAITYPE_WDDM_2_7_CAPS = 70,
+} KMTQUERYADAPTERINFOTYPE;
+
+typedef struct _D3DKMT_QUERYADAPTERINFO
+{
+    UINT hAdapter;
+    KMTQUERYADAPTERINFOTYPE Type;
+    VOID* pPrivateDriverData;
+    UINT PrivateDriverDataSize;
+} D3DKMT_QUERYADAPTERINFO;
+
+#pragma pack(push, 1)
+struct Resource {
+    uint64_t guid1{};
+    uint64_t guid2{};
+    uint64_t guid3{};
+    uint64_t guid4{};
+
+    void* reserved1{};
+    void* reserved2{};
+
+    uint64_t reserved3{};
+    uint64_t reserved4{};
+    uint32_t state{};
+};
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct ResourceTag {
+    uint64_t guid1{};
+    uint64_t guid2{};
+    uint64_t guid3{};
+    uint64_t guid4{};
+
+    Resource* resource{};
+    uint32_t type{};
+};
+#pragma pack(pop)
+
+
+typedef int(*PFN_D3DKMTQueryAdapterInfo)(const D3DKMT_QUERYADAPTERINFO* data);
+typedef int(*PFN_slSetTag)(uint64_t viewport, ResourceTag* tags, uint32_t numTags, uint64_t cmdBuffer);
+
+static PFN_D3DKMTQueryAdapterInfo o_D3DKMTQueryAdapterInfo = nullptr;
+static PFN_slSetTag o_slSetTag = nullptr;
+
+#pragma endregion
+
 #pragma region Structs
 
 struct shared
