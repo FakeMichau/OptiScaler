@@ -374,19 +374,6 @@ private:
     inline static PFN_UpdateFeature _UpdateFeature = nullptr;
 
 public:
-    // Nukem's DLSSG Mod
-    inline static HMODULE _dlssgModDll = nullptr;
-    inline static PFN_D3D12_Init _DLSSG_D3D12_Init = nullptr;
-    inline static PFN_D3D12_Init_Ext _DLSSG_D3D12_Init_Ext = nullptr;
-    inline static PFN_D3D12_Shutdown _DLSSG_D3D12_Shutdown = nullptr;
-    inline static PFN_D3D12_Shutdown1 _DLSSG_D3D12_Shutdown1 = nullptr;
-    inline static PFN_D3D12_GetScratchBufferSize _DLSSG_D3D12_GetScratchBufferSize = nullptr;
-    inline static PFN_D3D12_CreateFeature _DLSSG_D3D12_CreateFeature = nullptr;
-    inline static PFN_D3D12_ReleaseFeature _DLSSG_D3D12_ReleaseFeature = nullptr;
-    inline static PFN_D3D12_GetFeatureRequirements _DLSSG_D3D12_GetFeatureRequirements = nullptr;
-    inline static PFN_D3D12_EvaluateFeature _DLSSG_D3D12_EvaluateFeature = nullptr;
-    inline static PFN_D3D12_PopulateParameters_Impl _DLSSG_D3D12_PopulateParameters_Impl = nullptr;
-
     static void InitNVNGX()
     {
         // if dll already loaded
@@ -408,23 +395,6 @@ public:
                 Config::Instance()->DE_Available = true;
                 LOG_INFO("dlss-enabler-ngx.dll loaded from DLSS Enabler, ptr: {0:X}", (ULONG64)_dll);
                 break;
-            }
-
-            if (Config::Instance()->DLSSGMod.value_or(false) && !Config::Instance()->DE_Available) {
-                _dlssgModDll = LoadLibrary(L"dlssg_to_fsr3_amd_is_better.dll");
-            }
-
-            if (_dlssgModDll != nullptr) {
-                _DLSSG_D3D12_Init = (PFN_D3D12_Init)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_Init");
-                _DLSSG_D3D12_Init_Ext = (PFN_D3D12_Init_Ext)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_Init_Ext");
-                _DLSSG_D3D12_Shutdown = (PFN_D3D12_Shutdown)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_Shutdown");
-                _DLSSG_D3D12_Shutdown1 = (PFN_D3D12_Shutdown1)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_Shutdown1");
-                _DLSSG_D3D12_GetScratchBufferSize = (PFN_D3D12_GetScratchBufferSize)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_GetScratchBufferSize");
-                _DLSSG_D3D12_CreateFeature = (PFN_D3D12_CreateFeature)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_CreateFeature");
-                _DLSSG_D3D12_ReleaseFeature = (PFN_D3D12_ReleaseFeature)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_ReleaseFeature");
-                _DLSSG_D3D12_GetFeatureRequirements = (PFN_D3D12_GetFeatureRequirements)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_GetFeatureRequirements");
-                _DLSSG_D3D12_EvaluateFeature = (PFN_D3D12_EvaluateFeature)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_EvaluateFeature");
-                _DLSSG_D3D12_PopulateParameters_Impl = (PFN_D3D12_PopulateParameters_Impl)GetProcAddress(_dlssgModDll, "NVSDK_NGX_D3D12_PopulateParameters_Impl");
             }
 
             // From nvngx.ini path
