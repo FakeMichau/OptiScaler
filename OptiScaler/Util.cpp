@@ -116,3 +116,45 @@ HWND Util::GetProcessWindow() {
 	return hwnd;
 }
 
+void Util::GetDLLVersion(std::wstring dllPath, version_t* versionOut) {
+	// Step 1: Get the size of the version information
+	DWORD handle = 0;
+	DWORD versionSize = GetFileVersionInfoSizeW(dllPath.c_str(), &handle);
+
+	if (versionSize == 0)
+	{
+		LOG_ERROR("Failed to get version info size: {0:X}", GetLastError());
+		return;
+	}
+
+	// Step 2: Allocate buffer and get the version information
+	std::vector<BYTE> versionInfo(versionSize);
+	if (!GetFileVersionInfoW(dllPath.c_str(), handle, versionSize, versionInfo.data()))
+	{
+		LOG_ERROR("Failed to get version info: {0:X}", GetLastError());
+		return;
+	}
+
+	// Step 3: Extract the version information
+	VS_FIXEDFILEINFO* fileInfo = nullptr;
+	UINT size = 0;
+	if (!VerQueryValueW(versionInfo.data(), L"\\", reinterpret_cast<LPVOID*>(&fileInfo), &size)) {
+		LOG_ERROR("Failed to query version value: {0:X}", GetLastError());
+		return;
+	}
+
+	if (fileInfo != nullptr && versionOut != nullptr) {
+		// Extract major, minor, build, and revision numbers from version information
+		DWORD fileVersionMS = fileInfo->dwFileVersionMS;
+		DWORD fileVersionLS = fileInfo->dwFileVersionLS;
+
+		versionOut->major = (fileVersionMS >> 16) & 0xffff;
+		versionOut->minor = (fileVersionMS >> 0) & 0xffff;
+		versionOut->patch = (fileVersionLS >> 16) & 0xffff;
+		versionOut->reserved = (fileVersionLS >> 0) & 0xffff;
+	}
+	else
+	{
+		LOG_ERROR("No version information found!");
+	}
+}

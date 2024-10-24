@@ -744,6 +744,7 @@ static int hkD3DKMTQueryAdapterInfo(const D3DKMT_QUERYADAPTERINFO* data) {
 }
 
 static int hkslSetTag(uint64_t viewport, ResourceTag* tags, uint32_t numTags, uint64_t cmdBuffer) {
+    LOG_FUNC();
     // HUDless, STATE_NON_PIXEL_SHADER_RESOURCE | STATE_PIXEL_SHADER_RESOURCE
     if (Config::Instance()->Cyberpunk && tags->type == 2 && tags->resource->state == 0xC0 && numTags == 1) {
         // STATE_UNORDERED_ACCESS
@@ -991,8 +992,20 @@ static void AttachHooks()
         if (o_D3DKMTQueryAdapterInfo != nullptr)
             DetourAttach(&(PVOID&)o_D3DKMTQueryAdapterInfo, hkD3DKMTQueryAdapterInfo);
 
-        if (o_slSetTag != nullptr)
-            DetourAttach(&(PVOID&)o_slSetTag, hkslSetTag);
+        if (o_slSetTag != nullptr) {
+            // Get a handle for sl.interposer and then the path
+            HMODULE hModule = nullptr;
+            char dllPath[MAX_PATH];
+            GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, reinterpret_cast<LPCSTR>(o_slSetTag), &hModule);
+            GetModuleFileNameA(hModule, dllPath, MAX_PATH);
+
+            Util::version_t sl_version;
+            Util::GetDLLVersion(string_to_wstring(dllPath), &sl_version);
+            LOG_INFO("Streamline version: {}.{}.{}", sl_version.major, sl_version.minor, sl_version.patch);
+
+            if (sl_version.major >= 2)
+                DetourAttach(&(PVOID&)o_slSetTag, hkslSetTag);
+        }
 
          DetourTransactionCommit();
     }
