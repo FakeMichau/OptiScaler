@@ -743,16 +743,72 @@ static int hkD3DKMTQueryAdapterInfo(const D3DKMT_QUERYADAPTERINFO* data) {
     return result;
 }
 
-static int hkslSetTag(uint64_t viewport, ResourceTag* tags, uint32_t numTags, uint64_t cmdBuffer) {
+static int hkslSetTag(uint64_t viewport, sl::ResourceTag* tags, uint32_t numTags, uint64_t cmdBuffer) {
     LOG_FUNC();
-    // HUDless, STATE_NON_PIXEL_SHADER_RESOURCE | STATE_PIXEL_SHADER_RESOURCE
-    if (Config::Instance()->Cyberpunk && tags->type == 2 && tags->resource->state == 0xC0 && numTags == 1) {
-        // STATE_UNORDERED_ACCESS
-        tags->resource->state = 0x8;
-        LOG_TRACE("Changing hudless resource state");
+    for (auto i = 0; i < numTags; i++) {
+        if (Config::Instance()->Cyberpunk && tags[i].type == 2 && tags[i].resource->state == (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)) {
+            tags[i].resource->state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            LOG_TRACE("Changing hudless resource state");
+        }
     }
     auto result = o_slSetTag(viewport, tags, numTags, cmdBuffer);
     return result;
+}
+
+static char* trimStreamlineLog(const char* msg) {
+    int bracket_count = 0;
+    const char* start = msg;
+
+    while (*start != '\0' && bracket_count < 5) {
+        if (*start == ']') {
+            bracket_count++;
+        }
+        start++;
+    }
+
+    char* result = (char*)malloc(strlen(start) + 1);
+    if (!result) return NULL;
+
+    strcpy(result, start);
+
+    size_t length = strlen(result);
+    if (length > 0 && result[length - 1] == '\n') {
+        result[length - 1] = '\0';
+    }
+
+    return result;
+}
+
+static void streamlineLogCallback(sl::LogType type, const char* msg) {
+    char* trimmed_msg = trimStreamlineLog(msg);
+
+    switch (type) {
+    case sl::LogType::eWarn:
+        LOG_WARN("{}", trimmed_msg);
+        break;
+    case sl::LogType::eInfo:
+        LOG_INFO("{}", trimmed_msg);
+        break;
+    case sl::LogType::eError:
+        LOG_ERROR("{}", trimmed_msg);
+        break;
+    case sl::LogType::eCount:
+        LOG_ERROR("{}", trimmed_msg);
+        break;
+    }
+
+    free(trimmed_msg);
+
+    if (o_logCallback != nullptr)
+        o_logCallback(type, msg);
+}
+
+static int hkslInit(sl::Preferences* pref, uint64_t sdkVersion) {
+    LOG_FUNC();
+    o_logCallback = pref->logMessageCallback;
+    pref->logLevel = sl::LogLevel::eCount;
+    pref->logMessageCallback = &streamlineLogCallback;
+    return o_slInit(pref, sdkVersion);
 }
 
 #pragma endregion
@@ -985,6 +1041,7 @@ static void AttachHooks()
     if (Config::Instance()->SpoofHAGS.value_or(false) || Config::Instance()->DLSSGMod.value_or(false)) {
         o_D3DKMTQueryAdapterInfo = reinterpret_cast<PFN_D3DKMTQueryAdapterInfo>(DetourFindFunction("gdi32.dll", "D3DKMTQueryAdapterInfo"));
         o_slSetTag = reinterpret_cast<PFN_slSetTag>(DetourFindFunction("sl.interposer.dll", "slSetTag"));
+        o_slInit = reinterpret_cast<PFN_slInit>(DetourFindFunction("sl.interposer.dll", "slInit"));
 
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
@@ -992,7 +1049,7 @@ static void AttachHooks()
         if (o_D3DKMTQueryAdapterInfo != nullptr)
             DetourAttach(&(PVOID&)o_D3DKMTQueryAdapterInfo, hkD3DKMTQueryAdapterInfo);
 
-        if (o_slSetTag != nullptr) {
+        if (o_slSetTag != nullptr && o_slInit != nullptr) {
             // Get a handle for sl.interposer and then the path
             HMODULE hModule = nullptr;
             char dllPath[MAX_PATH];
@@ -1003,8 +1060,10 @@ static void AttachHooks()
             Util::GetDLLVersion(string_to_wstring(dllPath), &sl_version);
             LOG_INFO("Streamline version: {}.{}.{}", sl_version.major, sl_version.minor, sl_version.patch);
 
-            if (sl_version.major >= 2)
+            if (sl_version.major >= 2) {
                 DetourAttach(&(PVOID&)o_slSetTag, hkslSetTag);
+                DetourAttach(&(PVOID&)o_slInit, hkslInit);
+            }
         }
 
          DetourTransactionCommit();

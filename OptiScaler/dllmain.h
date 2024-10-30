@@ -4,6 +4,7 @@
 
 #include "detours/detours.h"
 #include "dxgi1_6.h"
+#include "../external/Streamline/include/sl.h"
 
 #include <DbgHelp.h>
 #pragma comment(lib, "Dbghelp.lib")
@@ -72,40 +73,16 @@ typedef struct _D3DKMT_QUERYADAPTERINFO
     UINT PrivateDriverDataSize;
 } D3DKMT_QUERYADAPTERINFO;
 
-#pragma pack(push, 1)
-struct Resource {
-    uint64_t guid1{};
-    uint64_t guid2{};
-    uint64_t guid3{};
-    uint64_t guid4{};
-
-    void* reserved1{};
-    void* reserved2{};
-
-    uint64_t reserved3{};
-    uint64_t reserved4{};
-    uint32_t state{};
-};
-#pragma pack(pop)
-
-#pragma pack(push, 1)
-struct ResourceTag {
-    uint64_t guid1{};
-    uint64_t guid2{};
-    uint64_t guid3{};
-    uint64_t guid4{};
-
-    Resource* resource{};
-    uint32_t type{};
-};
-#pragma pack(pop)
-
-
 typedef int(*PFN_D3DKMTQueryAdapterInfo)(const D3DKMT_QUERYADAPTERINFO* data);
-typedef int(*PFN_slSetTag)(uint64_t viewport, ResourceTag* tags, uint32_t numTags, uint64_t cmdBuffer);
+typedef int(*PFN_slSetTag)(uint64_t viewport, sl::ResourceTag* tags, uint32_t numTags, uint64_t cmdBuffer);
+typedef int(*PFN_slInit)(sl::Preferences* pref, uint64_t sdkVersion);
+typedef void(*PFN_LogCallback)(sl::LogType type, const char* msg);
 
 static PFN_D3DKMTQueryAdapterInfo o_D3DKMTQueryAdapterInfo = nullptr;
 static PFN_slSetTag o_slSetTag = nullptr;
+static PFN_slInit o_slInit = nullptr;
+
+static PFN_LogCallback o_logCallback = nullptr;
 
 #pragma endregion
 
