@@ -902,6 +902,48 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
     }
     else if (handleId >= DLSSG_MOD_ID_OFFSET)
     {
+        // Make a copy of the depth going to the frame generator
+        // Fixes an issue with the depth being corrupted on AMD under Windows
+        
+        ID3D12Resource* dlssgDepth;
+        InParameters->Get("DLSSG.Depth", &dlssgDepth);
+
+        if (dlssgDepth) {
+            D3D12_RESOURCE_DESC desc = dlssgDepth->GetDesc();
+
+            D3D12_HEAP_PROPERTIES heapProperties;
+            D3D12_HEAP_FLAGS heapFlags;
+
+            static ID3D12Resource* copiedDlssgDepth = nullptr;
+            if (copiedDlssgDepth != nullptr) {
+                copiedDlssgDepth->Release();
+                copiedDlssgDepth = nullptr;
+            }
+
+            if (dlssgDepth->GetHeapProperties(&heapProperties, &heapFlags) == S_OK) {
+                auto result = D3D12Device->CreateCommittedResource(
+                    &heapProperties,
+                    D3D12_HEAP_FLAG_NONE,
+                    &desc,
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    nullptr,
+                    IID_PPV_ARGS(&copiedDlssgDepth)
+                );
+                if (result == S_OK) {
+                    InCmdList->CopyResource(copiedDlssgDepth, dlssgDepth);
+                    InParameters->Set("DLSSG.Depth", (void*)copiedDlssgDepth); // cast to make sure it's void*, otherwise dlssg cries
+                }
+                else
+                {
+                    LOG_ERROR("Making a new resource for DLSSG Depth has failed");
+                }
+            }
+            else
+            {
+                LOG_ERROR("Getting heap properties has failed");
+            }
+        }
+
         return DLSSGMod::D3D12_EvaluateFeature(InCmdList, InFeatureHandle, InParameters, InCallback);
     }
 
