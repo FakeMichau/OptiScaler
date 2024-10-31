@@ -757,19 +757,11 @@ static int hkslSetTag(uint64_t viewport, sl::ResourceTag* tags, uint32_t numTags
 
 static char* trimStreamlineLog(const char* msg) {
     int bracket_count = 0;
-    const char* start = msg;
 
-    while (*start != '\0' && bracket_count < 5) {
-        if (*start == ']') {
-            bracket_count++;
-        }
-        start++;
-    }
-
-    char* result = (char*)malloc(strlen(start) + 1);
+    char* result = (char*)malloc(strlen(msg) + 1);
     if (!result) return NULL;
 
-    strcpy(result, start);
+    strcpy(result, msg);
 
     size_t length = strlen(result);
     if (length > 0 && result[length - 1] == '\n') {

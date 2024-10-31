@@ -902,6 +902,15 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
     }
     else if (handleId >= DLSSG_MOD_ID_OFFSET)
     {
+        // Workaround mostly for final fantasy xvi
+        float cameraFar = 0;
+        InParameters->Get("DLSSG.CameraFar", &cameraFar);
+
+        if (cameraFar == INFINITY) {
+            cameraFar = 10000;
+            InParameters->Set("DLSSG.CameraFar", cameraFar);
+        }
+
         // Make a copy of the depth going to the frame generator
         // Fixes an issue with the depth being corrupted on AMD under Windows
         
