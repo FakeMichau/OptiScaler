@@ -1,14 +1,15 @@
 #pragma once
-#include "dllmain.h"
-#include "resource.h"
 
-#include "Logger.h"
 #include "Util.h"
-#include "NVNGX_Proxy.h"
-#include "XeSS_Proxy.h"
-
-#include "imgui/imgui_overlay_dx.h"
-#include "imgui/imgui_overlay_vk.h"
+#include "Logger.h"
+#include "resource.h"
+#include "exports/Exports.h"
+#include "proxies/NVNGX_Proxy.h"
+#include "proxies/XeSS_Proxy.h"
+#include "proxies/Gdi32_Proxy.h"
+#include "proxies/Streamline_Proxy.h"
+#include "menu/imgui_overlay_dx.h"
+#include "menu/imgui_overlay_vk.h"
 
 #include <vulkan/vulkan_core.h>
 
@@ -68,6 +69,12 @@ inline std::vector<std::string> nvapiNames =
     "nvapi64",
 };
 
+inline std::vector<std::string> streamlineNames =
+{
+    "sl.interposer.dll",
+    "sl.interposer",
+};
+
 inline std::vector<std::string> dllNames;
 
 inline std::vector<std::wstring> upscalerNamesW =
@@ -88,6 +95,12 @@ inline std::vector<std::wstring> nvapiNamesW =
 {
     L"nvapi64.dll",
     L"nvapi64",
+};
+
+inline std::vector<std::wstring> streamlineNamesW =
+{
+    L"sl.interposer.dll",
+    L"sl.interposer",
 };
 
 inline std::vector<std::wstring> dllNamesW;
@@ -134,7 +147,7 @@ inline static bool CheckDllNameW(std::wstring* dllName, std::vector<std::wstring
     return false;
 }
 
-inline static HMODULE LoadLibraryCheck(std::string lcaseLibName)
+inline static HMODULE LoadLibraryCheck(std::string lcaseLibName, LPCSTR lpLibFullPath)
 {
     // If Opti is not loading as nvngx.dll
     if (!isWorkingWithEnabler && !Config::Instance()->upscalerDisableHook)
@@ -179,6 +192,16 @@ inline static HMODULE LoadLibraryCheck(std::string lcaseLibName)
             return nvngxDlss;
     }
 
+    // sl.interposer.dll
+    if (Config::Instance()->DLSSGMod.value_or(false) && CheckDllName(&lcaseLibName, &streamlineNames))
+    {
+        auto streamlineModule = o_LoadLibraryA(lpLibFullPath);
+
+        hookStreamline(streamlineModule);
+
+        return streamlineModule;
+    }
+
     if (!isNvngxMode && CheckDllName(&lcaseLibName, &dllNames))
     {
         LOG_INFO("{0} call returning this dll!", lcaseLibName);
@@ -192,7 +215,7 @@ inline static HMODULE LoadLibraryCheck(std::string lcaseLibName)
     return nullptr;
 }
 
-inline static HMODULE LoadLibraryCheckW(std::wstring lcaseLibName)
+inline static HMODULE LoadLibraryCheckW(std::wstring lcaseLibName, LPCWSTR lpLibFullPath)
 {
     auto lcaseLibNameA = wstring_to_string(lcaseLibName);
 
@@ -237,6 +260,16 @@ inline static HMODULE LoadLibraryCheckW(std::wstring lcaseLibName)
 
         if (nvapi != nullptr)
             return nvapi;
+    }
+
+    // sl.interposer.dll
+    if (Config::Instance()->DLSSGMod.value_or(false) && CheckDllNameW(&lcaseLibName, &streamlineNamesW))
+    {
+        auto streamlineModule = o_LoadLibraryW(lpLibFullPath);
+
+        hookStreamline(streamlineModule);
+
+        return streamlineModule;
     }
 
     if (!isNvngxMode && CheckDllNameW(&lcaseLibName, &dllNamesW))
@@ -377,7 +410,7 @@ static HMODULE hkLoadLibraryA(LPCSTR lpLibFileName)
     LOG_TRACE("call: {0}", lcaseLibName);
 #endif // DEBUG
 
-    auto moduleHandle = LoadLibraryCheck(lcaseLibName);
+    auto moduleHandle = LoadLibraryCheck(lcaseLibName, lpLibFileName);
 
     if (moduleHandle != nullptr)
         return moduleHandle;
@@ -404,7 +437,7 @@ static HMODULE hkLoadLibraryW(LPCWSTR lpLibFileName)
     LOG_TRACE("call: {0}", wstring_to_string(lcaseLibName));
 #endif // DEBUG
 
-    auto moduleHandle = LoadLibraryCheckW(lcaseLibName);
+    auto moduleHandle = LoadLibraryCheckW(lcaseLibName, lpLibFileName);
 
     if (moduleHandle != nullptr)
         return moduleHandle;
@@ -431,7 +464,7 @@ static HMODULE hkLoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlag
     LOG_TRACE("call: {0}", lcaseLibName);
 #endif
 
-    auto moduleHandle = LoadLibraryCheck(lcaseLibName);
+    auto moduleHandle = LoadLibraryCheck(lcaseLibName, lpLibFileName);
 
     if (moduleHandle != nullptr)
         return moduleHandle;
@@ -459,7 +492,7 @@ static HMODULE hkLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFla
     LOG_TRACE("call: {0}", wstring_to_string(lcaseLibName)); 
 #endif
 
-    auto moduleHandle = LoadLibraryCheckW(lcaseLibName);
+    auto moduleHandle = LoadLibraryCheckW(lcaseLibName, lpLibFileName);
 
     if (moduleHandle != nullptr)
         return moduleHandle;
@@ -725,86 +758,6 @@ static VkResult hkvkEnumerateInstanceExtensionProperties(const char* pLayerName,
     return result;
 }
 
-#pragma endregion
-
-#pragma region DLSSG related Hooks
-
-static int hkD3DKMTQueryAdapterInfo(const D3DKMT_QUERYADAPTERINFO* data) {
-    auto result = o_D3DKMTQueryAdapterInfo(data);
-    D3DKMT_WDDM_2_7_CAPS* d3dkmt_wddm_2_7_caps;
-    if (data->Type == KMTQAITYPE_WDDM_2_7_CAPS) {
-        LOG_INFO("Spoofing HAGS");
-        d3dkmt_wddm_2_7_caps = static_cast<D3DKMT_WDDM_2_7_CAPS*>(data->pPrivateDriverData);
-        d3dkmt_wddm_2_7_caps->HwSchSupported = 1;
-        d3dkmt_wddm_2_7_caps->HwSchEnabled = 1;
-        d3dkmt_wddm_2_7_caps->HwSchEnabledByDefault = 0;
-        d3dkmt_wddm_2_7_caps->IndependentVidPnVSyncControl = 0;
-    }
-    return result;
-}
-
-static int hkslSetTag(uint64_t viewport, sl::ResourceTag* tags, uint32_t numTags, uint64_t cmdBuffer) {
-    LOG_FUNC();
-    for (auto i = 0; i < numTags; i++) {
-        if (Config::Instance()->Cyberpunk && tags[i].type == 2 && tags[i].resource->state == (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)) {
-            tags[i].resource->state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-            LOG_TRACE("Changing hudless resource state");
-        }
-    }
-    auto result = o_slSetTag(viewport, tags, numTags, cmdBuffer);
-    return result;
-}
-
-static char* trimStreamlineLog(const char* msg) {
-    int bracket_count = 0;
-
-    char* result = (char*)malloc(strlen(msg) + 1);
-    if (!result) return NULL;
-
-    strcpy(result, msg);
-
-    size_t length = strlen(result);
-    if (length > 0 && result[length - 1] == '\n') {
-        result[length - 1] = '\0';
-    }
-
-    return result;
-}
-
-static void streamlineLogCallback(sl::LogType type, const char* msg) {
-    char* trimmed_msg = trimStreamlineLog(msg);
-
-    switch (type) {
-    case sl::LogType::eWarn:
-        LOG_WARN("{}", trimmed_msg);
-        break;
-    case sl::LogType::eInfo:
-        LOG_INFO("{}", trimmed_msg);
-        break;
-    case sl::LogType::eError:
-        LOG_ERROR("{}", trimmed_msg);
-        break;
-    case sl::LogType::eCount:
-        LOG_ERROR("{}", trimmed_msg);
-        break;
-    }
-
-    free(trimmed_msg);
-
-    if (o_logCallback != nullptr)
-        o_logCallback(type, msg);
-}
-
-static int hkslInit(sl::Preferences* pref, uint64_t sdkVersion) {
-    LOG_FUNC();
-    o_logCallback = pref->logMessageCallback;
-    pref->logLevel = sl::LogLevel::eCount;
-    pref->logMessageCallback = &streamlineLogCallback;
-    return o_slInit(pref, sdkVersion);
-}
-
-#pragma endregion
-
 static void DetachHooks()
 {
     if (!isNvngxMode)
@@ -918,11 +871,6 @@ static void DetachHooks()
             }
         }
 
-        if (Config::Instance()->SpoofHAGS.value_or(false) || Config::Instance()->DLSSGMod.value_or(false)) {
-            DetourDetach(&(PVOID&)o_D3DKMTQueryAdapterInfo, hkD3DKMTQueryAdapterInfo);
-            o_D3DKMTQueryAdapterInfo = nullptr;
-        }
-
         DetourTransactionCommit();
 
         FreeLibrary(shared.dll);
@@ -932,6 +880,12 @@ static void DetachHooks()
 static void AttachHooks()
 {
     LOG_FUNC();
+
+    hookGdi32();
+    // hook streamline right away if it's already loaded
+    auto slModule = GetModuleHandleA("sl.interposer.dll");
+    if (slModule != nullptr)
+        hookStreamline(slModule);
 
     if (o_LoadLibraryA == nullptr || o_LoadLibraryW == nullptr)
     {
@@ -1028,37 +982,6 @@ static void AttachHooks()
 
             DetourTransactionCommit();
         }
-    }
-
-    if (Config::Instance()->SpoofHAGS.value_or(false) || Config::Instance()->DLSSGMod.value_or(false)) {
-        o_D3DKMTQueryAdapterInfo = reinterpret_cast<PFN_D3DKMTQueryAdapterInfo>(DetourFindFunction("gdi32.dll", "D3DKMTQueryAdapterInfo"));
-        o_slSetTag = reinterpret_cast<PFN_slSetTag>(DetourFindFunction("sl.interposer.dll", "slSetTag"));
-        o_slInit = reinterpret_cast<PFN_slInit>(DetourFindFunction("sl.interposer.dll", "slInit"));
-
-        DetourTransactionBegin();
-        DetourUpdateThread(GetCurrentThread());
-
-        if (o_D3DKMTQueryAdapterInfo != nullptr)
-            DetourAttach(&(PVOID&)o_D3DKMTQueryAdapterInfo, hkD3DKMTQueryAdapterInfo);
-
-        if (o_slSetTag != nullptr && o_slInit != nullptr) {
-            // Get a handle for sl.interposer and then the path
-            HMODULE hModule = nullptr;
-            char dllPath[MAX_PATH];
-            GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, reinterpret_cast<LPCSTR>(o_slSetTag), &hModule);
-            GetModuleFileNameA(hModule, dllPath, MAX_PATH);
-
-            Util::version_t sl_version;
-            Util::GetDLLVersion(string_to_wstring(dllPath), &sl_version);
-            LOG_INFO("Streamline version: {}.{}.{}", sl_version.major, sl_version.minor, sl_version.patch);
-
-            if (sl_version.major >= 2) {
-                DetourAttach(&(PVOID&)o_slSetTag, hkslSetTag);
-                DetourAttach(&(PVOID&)o_slInit, hkslInit);
-            }
-        }
-
-         DetourTransactionCommit();
     }
 }
 

@@ -1,5 +1,7 @@
 #pragma once
+
 #include "pch.h"
+
 #include "Config.h"
 #include "DLSSG_Mod.h"
 
