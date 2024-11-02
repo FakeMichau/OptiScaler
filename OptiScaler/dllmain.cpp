@@ -8,6 +8,7 @@
 #include "proxies/XeSS_Proxy.h"
 #include "proxies/Gdi32_Proxy.h"
 #include "proxies/Streamline_Proxy.h"
+
 #include "menu/imgui_overlay_dx.h"
 #include "menu/imgui_overlay_vk.h"
 
