@@ -56,30 +56,35 @@ public:
     {
         if (isDx12Available())
             return _DLSSG_D3D12_Init(InApplicationId, InApplicationDataPath, InDevice, InFeatureInfo, InSDKVersion);
+        return NVSDK_NGX_Result_Fail;
     }
 
     static inline NVSDK_NGX_Result D3D12_Init_Ext(unsigned long long InApplicationId, const wchar_t* InApplicationDataPath, ID3D12Device* InDevice, NVSDK_NGX_Version InSDKVersion, const NVSDK_NGX_FeatureCommonInfo* InFeatureInfo)
     {
         if (isDx12Available())
             return _DLSSG_D3D12_Init_Ext(InApplicationId, InApplicationDataPath, InDevice, InSDKVersion, InFeatureInfo);
+        return NVSDK_NGX_Result_Fail;
     }
 
     static inline NVSDK_NGX_Result D3D12_Shutdown()
     {
         if (isDx12Available())
             return _DLSSG_D3D12_Shutdown();
+        return NVSDK_NGX_Result_Fail;
     }
 
     static inline NVSDK_NGX_Result D3D12_Shutdown1(ID3D12Device* InDevice)
     {
         if (isDx12Available())
             return _DLSSG_D3D12_Shutdown1(InDevice);
+        return NVSDK_NGX_Result_Fail;
     }
 
     static inline NVSDK_NGX_Result D3D12_GetScratchBufferSize(NVSDK_NGX_Feature InFeatureId, const NVSDK_NGX_Parameter* InParameters, size_t* OutSizeInBytes)
     {
         if (isDx12Available())
             return _DLSSG_D3D12_GetScratchBufferSize(InFeatureId, InParameters, OutSizeInBytes);
+        return NVSDK_NGX_Result_Fail;
     }
 
     static inline NVSDK_NGX_Result D3D12_CreateFeature(ID3D12GraphicsCommandList* InCmdList, NVSDK_NGX_Feature InFeatureID, NVSDK_NGX_Parameter* InParameters, NVSDK_NGX_Handle** OutHandle)
@@ -89,6 +94,7 @@ public:
             (*OutHandle)->Id += DLSSG_MOD_ID_OFFSET;
             return result;
         }
+        return NVSDK_NGX_Result_Fail;
     }
 
     static inline NVSDK_NGX_Result D3D12_ReleaseFeature(NVSDK_NGX_Handle* InHandle)
@@ -99,12 +105,14 @@ public:
             };
             return _DLSSG_D3D12_ReleaseFeature(&TempHandle);
         }
+        return NVSDK_NGX_Result_Fail;
     }
 
     static inline NVSDK_NGX_Result D3D12_GetFeatureRequirements(IDXGIAdapter* Adapter, const NVSDK_NGX_FeatureDiscoveryInfo* FeatureDiscoveryInfo, NVSDK_NGX_FeatureRequirement* OutSupported)
     {
         if (isDx12Available())
             return _DLSSG_D3D12_GetFeatureRequirements(Adapter, FeatureDiscoveryInfo, OutSupported);
+        return NVSDK_NGX_Result_Fail;
     }
 
     static inline NVSDK_NGX_Result D3D12_EvaluateFeature(ID3D12GraphicsCommandList* InCmdList, const NVSDK_NGX_Handle* InFeatureHandle, const NVSDK_NGX_Parameter* InParameters, PFN_NVSDK_NGX_ProgressCallback InCallback)
@@ -115,11 +123,13 @@ public:
             };
             return _DLSSG_D3D12_EvaluateFeature(InCmdList, &TempHandle, InParameters, InCallback);
         }
+        return NVSDK_NGX_Result_Fail;
     }
 
     static inline NVSDK_NGX_Result D3D12_PopulateParameters_Impl(NVSDK_NGX_Parameter* InParameters)
     {
         if (isDx12Available())
             return _DLSSG_D3D12_PopulateParameters_Impl(InParameters);
+        return NVSDK_NGX_Result_Fail;
     }
 };

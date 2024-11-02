@@ -82,7 +82,7 @@
     <IncludePath>$(SolutionDir)external\vulkan\include;$(SolutionDir)external\nvngx_dlss_sdk;$(SolutionDir)external\xess\inc\xess;$(SolutionDir)external\FidelityFX-SDK\ffx-api\include\ffx_api;$(SolutionDir)external\simpleini;$(SolutionDir)external\unordered_dense\include;$(SolutionDir)external\spdlog\include;$(ProjectDir);$(IncludePath)</IncludePath>
     <LibraryPath>$(ProjectDir)libs\fsr2;$(ProjectDir)libs\fsr2_212;$(ProjectDir)libs\fsr31;$(ProjectDir)libs\vulkan;$(ProjectDir)libs\d3dx;$(ProjectDir)libs\detours;$(SolutionDir)external\xess\lib;$(LibraryPath)</LibraryPath>
     <TargetName>dxgi</TargetName>
-    <OutDir>F:\SteamLibrary\steamapps\common\Deep Rock Galactic\FSD\Binaries\Win64\</OutDir>
+    <OutDir>F:\Red Dead Redemption\</OutDir>
     <IntDir>.\x64\Debug</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -170,7 +170,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalDependencies>Version.lib;Dbghelp.lib;dxgi.lib;d3d11.lib;d3d12.lib;dxguid.lib;d3dcompiler.lib;vulkan-1.lib;libs/ffx_fsr2_api_x64.lib;libs/ffx_fsr2_api_dx11_x64.lib;libs/ffx_fsr2_api_dx12_x64.lib;libs/ffx_fsr2_api_vk_x64.lib;libs/ffx_fsr2_212_api_dx12_x64.lib;libs/ffx_fsr2_212_api_vk_x64.lib;libs/ffx_fsr2_212_api_x64.lib;libs/ffx_backend_dx11_x64.lib;libs/ffx_fsr3_x64.lib;libs/ffx_frameinterpolation_x64.lib;libs/ffx_fsr3upscaler_x64.lib;libs/ffx_opticalflow_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Version.lib;Dbghelp.lib;dxgi.lib;d3d11.lib;d3d12.lib;dxguid.lib;d3dcompiler.lib;vulkan-1.lib;libs/detours.lib;libs/ffx_fsr2_api_x64.lib;libs/ffx_fsr2_api_dx11_x64.lib;libs/ffx_fsr2_api_dx12_x64.lib;libs/ffx_fsr2_api_vk_x64.lib;libs/ffx_fsr2_212_api_dx12_x64.lib;libs/ffx_fsr2_212_api_vk_x64.lib;libs/ffx_fsr2_212_api_x64.lib;libs/ffx_backend_dx11_x64.lib;libs/ffx_fsr3_x64.lib;libs/ffx_frameinterpolation_x64.lib;libs/ffx_fsr3upscaler_x64.lib;libs/ffx_opticalflow_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <ModuleDefinitionFile>Source.def</ModuleDefinitionFile>
       <DelayLoadDLLs>vulkan-1.dll;d3d11.dll;d3d12.dll;D3DCOMPILER_47.dll;%(DelayLoadDLLs)</DelayLoadDLLs>

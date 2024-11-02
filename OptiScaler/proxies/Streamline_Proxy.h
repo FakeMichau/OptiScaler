@@ -79,8 +79,28 @@ static int hkslSetTag(uint64_t viewport, sl::ResourceTag* tags, uint32_t numTags
     return result;
 }
 
+static void unhookStreamline() {
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
+
+    if (o_slSetTag != nullptr) {
+        DetourDetach(&(PVOID&)o_slSetTag, hkslSetTag);
+        o_slSetTag = nullptr;
+    }
+
+    if (o_slInit != nullptr) {
+        DetourDetach(&(PVOID&)o_slInit, hkslInit);
+        o_slInit = nullptr;
+    }
+
+    DetourTransactionCommit();
+}
+
 // Call it just after sl.interposer's load or if sl.interposer is already loaded
 static void hookStreamline(HMODULE slInterposer) {
+    if (o_slSetTag != nullptr || o_slInit != nullptr)
+        unhookStreamline();
+
     if (Config::Instance()->DLSSGMod.value_or(false)) {
         o_slSetTag = reinterpret_cast<PFN_slSetTag>(GetProcAddress(slInterposer, "slSetTag"));
         o_slInit = reinterpret_cast<PFN_slInit>(GetProcAddress(slInterposer, "slInit"));
@@ -110,19 +130,3 @@ static void hookStreamline(HMODULE slInterposer) {
     }
 }
 
-static void unhookStreamline() {
-    DetourTransactionBegin();
-    DetourUpdateThread(GetCurrentThread());
-
-    if (o_slSetTag != nullptr) {
-        DetourDetach(&(PVOID&)o_slSetTag, hkslSetTag);
-        o_slSetTag = nullptr;
-    }
-
-    if (o_slInit != nullptr) {
-        DetourDetach(&(PVOID&)o_slInit, hkslInit);
-        o_slInit = nullptr;
-    }
-
-    DetourTransactionCommit();
-}
