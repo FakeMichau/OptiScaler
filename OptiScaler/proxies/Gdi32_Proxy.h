@@ -35,26 +35,72 @@ typedef struct _D3DKMT_QUERYADAPTERINFO
     UINT PrivateDriverDataSize;
 } D3DKMT_QUERYADAPTERINFO;
 
+using D3DKMT_HANDLE = uint64_t;
+
+typedef struct _D3DKMT_ADAPTERINFO {
+    D3DKMT_HANDLE hAdapter;
+    LUID AdapterLuid;
+    ULONG NumOfSources;
+    BOOL bPrecisePresentRegionsPreferred;
+} D3DKMT_ADAPTERINFO;
+
+typedef struct _D3DKMT_ENUMADAPTERS2 {
+    ULONG NumAdapters;
+    D3DKMT_ADAPTERINFO* pAdapters;
+} D3DKMT_ENUMADAPTERS2;
+
 typedef int(*PFN_D3DKMTQueryAdapterInfo)(const D3DKMT_QUERYADAPTERINFO* data);
 
 static PFN_D3DKMTQueryAdapterInfo o_D3DKMTQueryAdapterInfo = nullptr;
 
 static int hkD3DKMTQueryAdapterInfo(const D3DKMT_QUERYADAPTERINFO* data) {
-    auto result = o_D3DKMTQueryAdapterInfo(data);
-    D3DKMT_WDDM_2_7_CAPS* d3dkmt_wddm_2_7_caps;
+    LOG_INFO("Adapter into type: {}", (uint32_t)data->Type);
     if (data->Type == KMTQAITYPE_WDDM_2_7_CAPS) {
         LOG_INFO("Spoofing HAGS");
-        d3dkmt_wddm_2_7_caps = static_cast<D3DKMT_WDDM_2_7_CAPS*>(data->pPrivateDriverData);
+
+        if (data->pPrivateDriverData == nullptr) {
+            LOG_ERROR("HAGS data nullptr");
+            return 0xFFFFFFFF;
+        }
+
+        auto d3dkmt_wddm_2_7_caps = static_cast<D3DKMT_WDDM_2_7_CAPS*>(data->pPrivateDriverData);
         d3dkmt_wddm_2_7_caps->HwSchSupported = 1;
         d3dkmt_wddm_2_7_caps->HwSchEnabled = 1;
         d3dkmt_wddm_2_7_caps->HwSchEnabledByDefault = 0;
         d3dkmt_wddm_2_7_caps->IndependentVidPnVSyncControl = 0;
+
+        return 0;
     }
-    return result;
+    else
+    {
+        return o_D3DKMTQueryAdapterInfo(data);
+    }
+}
+
+// Only for Linux, Wine doesn't have this function
+static int customD3DKMTEnumAdapters2(const D3DKMT_ENUMADAPTERS2* data) {
+    LOG_FUNC();
+
+    // Try to detect streamline
+    if (data->pAdapters != nullptr && data->NumAdapters == 8) {
+        LOG_INFO("Streamline detected");
+
+        for (uint32_t i = 0; i < 8; i++) {
+            // It seems Wine has those hard coded, no need to query them
+            data->pAdapters[i].AdapterLuid.HighPart = 0;
+            data->pAdapters[i].AdapterLuid.LowPart = 1010;
+        }
+
+        return 0;
+    }
+
+    return 0xFFFFFFFF;
 }
 
 // for spoofing HAGS, call early
 static void hookGdi32() {
+    LOG_FUNC();
+
     if (Config::Instance()->SpoofHAGS.value_or(false) || Config::Instance()->DLSSGMod.value_or(false)) {
         o_D3DKMTQueryAdapterInfo = reinterpret_cast<PFN_D3DKMTQueryAdapterInfo>(DetourFindFunction("gdi32.dll", "D3DKMTQueryAdapterInfo"));
 

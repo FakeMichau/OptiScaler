@@ -35,7 +35,7 @@ void AttachToFactory(IUnknown* unkFactory);
 
 bool SkipSpoofing()
 {
-    auto skip = !Config::Instance()->DxgiSpoofing.value_or(true) || Config::Instance()->dxgiSkipSpoofing || Config::Instance()->IsRunningOnLinux;
+    auto skip = !Config::Instance()->DxgiSpoofing.value_or(true) || Config::Instance()->dxgiSkipSpoofing;
 
     if (skip)
         LOG_TRACE("DxgiSpoofing: {}, dxgiSkipSpoofing: {}, skipping spoofing",

@@ -472,9 +472,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Library Include="libs\vulkan\vulkan-1.lib" />
-  </ItemGroup>
-  <ItemGroup>
     <ResourceCompile Include="OptiScaler.rc" />
   </ItemGroup>
   <ItemGroup>

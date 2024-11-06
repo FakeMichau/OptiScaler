@@ -367,6 +367,9 @@ static FARPROC hkGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
     if (hModule == dllModule)
         LOG_INFO("Trying to get process address of {0}", lpProcName);
 
+    if (hModule == GetModuleHandle(L"gdi32.dll") && lstrcmpA(lpProcName, "D3DKMTEnumAdapters2") == 0 && Config::Instance()->IsRunningOnLinux)
+        return (FARPROC)&customD3DKMTEnumAdapters2;
+
     return o_GetProcAddress(hModule, lpProcName);
 }
 
@@ -883,6 +886,7 @@ static void AttachHooks()
     LOG_FUNC();
 
     hookGdi32();
+
     // hook streamline right away if it's already loaded
     auto slModule = GetModuleHandleA("sl.interposer.dll");
     if (slModule != nullptr)
@@ -896,9 +900,7 @@ static void AttachHooks()
         o_LoadLibraryW = reinterpret_cast<PFN_LoadLibraryW>(DetourFindFunction("kernel32.dll", "LoadLibraryW"));
         o_LoadLibraryExA = reinterpret_cast<PFN_LoadLibraryExA>(DetourFindFunction("kernel32.dll", "LoadLibraryExA"));
         o_LoadLibraryExW = reinterpret_cast<PFN_LoadLibraryExW>(DetourFindFunction("kernel32.dll", "LoadLibraryExW"));
-#ifdef _DEBUG
         o_GetProcAddress = reinterpret_cast<PFN_GetProcAddress>(DetourFindFunction("kernel32.dll", "GetProcAddress"));
-#endif // DEBUG
 
         if (o_LoadLibraryA != nullptr || o_LoadLibraryW != nullptr || o_LoadLibraryExA != nullptr || o_LoadLibraryExW != nullptr)
         {

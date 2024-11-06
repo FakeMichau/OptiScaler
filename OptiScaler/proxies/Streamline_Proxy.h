@@ -98,6 +98,8 @@ static void unhookStreamline() {
 
 // Call it just after sl.interposer's load or if sl.interposer is already loaded
 static void hookStreamline(HMODULE slInterposer) {
+    LOG_FUNC();
+
     if (o_slSetTag != nullptr || o_slInit != nullptr)
         unhookStreamline();
 
