@@ -58,9 +58,10 @@ public:
         case NvApiTypes::NV_INTERFACE::D3D_GetLatency:
         case NvApiTypes::NV_INTERFACE::D3D_SetLatencyMarker:
         case NvApiTypes::NV_INTERFACE::D3D12_SetAsyncFrameMarker:
-            return ReflexHooks::hookReflex(OriginalNvAPI_QueryInterface, InterfaceId);
+            ReflexHooks::hookReflex(OriginalNvAPI_QueryInterface);
+            return ReflexHooks::getHookedReflex(InterfaceId);
         default:
-            ReflexHooks::hookReflex(OriginalNvAPI_QueryInterface, InterfaceId);
+            ReflexHooks::hookReflex(OriginalNvAPI_QueryInterface);
         }
 
         const auto functionPointer = OriginalNvAPI_QueryInterface(InterfaceId);
