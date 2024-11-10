@@ -76,50 +76,6 @@ private:
 
     inline static PFN_xessSetContextParameterF _xessSetContextParameterF = nullptr;
 
-    inline static void GetDLLVersion(std::wstring dllPath) 
-    {
-        // Step 1: Get the size of the version information
-        DWORD handle = 0;
-        DWORD versionSize = GetFileVersionInfoSizeW(dllPath.c_str(), &handle);
-
-        if (versionSize == 0)
-        {
-            LOG_ERROR("Failed to get version info size: {0:X}", GetLastError());
-            return;
-        }
-
-        // Step 2: Allocate buffer and get the version information
-        std::vector<BYTE> versionInfo(versionSize);
-        if (!GetFileVersionInfoW(dllPath.c_str(), handle, versionSize, versionInfo.data()))
-        {
-            LOG_ERROR("Failed to get version info: {0:X}", GetLastError());
-            return;
-        }
-
-        // Step 3: Extract the version information
-        VS_FIXEDFILEINFO* fileInfo = nullptr;
-        UINT size = 0;
-        if (!VerQueryValueW(versionInfo.data(), L"\\", reinterpret_cast<LPVOID*>(&fileInfo), &size)) {
-            LOG_ERROR("Failed to query version value: {0:X}", GetLastError());
-            return;
-        }
-
-        if (fileInfo != nullptr) {
-            // Extract major, minor, build, and revision numbers from version information
-            DWORD fileVersionMS = fileInfo->dwFileVersionMS;
-            DWORD fileVersionLS = fileInfo->dwFileVersionLS;
-
-            _xessVersion.major = (fileVersionMS >> 16) & 0xffff;
-            _xessVersion.minor = (fileVersionMS >> 0) & 0xffff;
-            _xessVersion.patch = (fileVersionLS >> 16) & 0xffff;
-            _xessVersion.reserved = (fileVersionLS >> 0) & 0xffff;
-        }
-        else
-        {
-            LOG_ERROR("No version information found!");
-        }
-    }
-
     inline static std::filesystem::path DllPath(HMODULE module)
     {
         static std::filesystem::path dll;
@@ -157,14 +113,14 @@ public:
                 if (cfgPath.has_filename())
                 {
                     LOG_INFO("Trying to load libxess.dll from ini path: {}", cfgPath.string());
-                    GetDLLVersion(cfgPath.wstring());
+                    Util::GetDLLVersion(cfgPath.wstring(), &_xessVersion);
                     _dll = LoadLibrary(cfgPath.c_str());
                 }
                 else
                 {
                     cfgPath = cfgPath / L"libxess.dll";
                     LOG_INFO("Trying to load libxess.dll from ini path: {}", cfgPath.string());
-                    GetDLLVersion(cfgPath.wstring());
+                    Util::GetDLLVersion(cfgPath.wstring(), &_xessVersion);
                     _dll = LoadLibrary(cfgPath.c_str());
                 }
             }
@@ -205,7 +161,7 @@ public:
                 // read version from file because 
                 // xessGetVersion cause access violation errors
                 auto path = DllPath(_dll);
-                GetDLLVersion(path.wstring());
+                Util::GetDLLVersion(path.wstring(), &_xessVersion);
             }
             else
             {
@@ -252,7 +208,7 @@ public:
             if (moduleHandle != nullptr)
             {
                 auto path = DllPath(moduleHandle);
-                GetDLLVersion(path.wstring());
+                Util::GetDLLVersion(path.wstring(), &_xessVersion);
             }
         }
 
