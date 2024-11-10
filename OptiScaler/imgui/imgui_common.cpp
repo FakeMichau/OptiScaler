@@ -1049,6 +1049,12 @@ void ImGuiCommon::RenderMenu()
                         }
                     }
 
+                    // DLSSG Mod
+                    if (Config::Instance()->DLSSGMod.value_or(false) && Config::Instance()->Api == NVNGX_DX12 && !Config::Instance()->WorkingAsNvngx) {
+                        ImGui::SeparatorText("Frame Generation (Dx12)");
+                        ImGui::Text("Please select DLSS Frame Generation in the game options\nYou might need to select DLSS first");
+                    }
+
                     // Dx11 with Dx12
                     if (Config::Instance()->AdvancedSettings.value_or(false) && Config::Instance()->Api == NVNGX_DX11 &&
                         Config::Instance()->Dx11Upscaler.value_or("fsr22") != "fsr22" && Config::Instance()->Dx11Upscaler.value_or("fsr22") != "dlss" && Config::Instance()->Dx11Upscaler.value_or("fsr22") != "fsr31")

@@ -64,12 +64,12 @@ class ReflexHooks {
 	}
 
 public:
-	inline static void* hookReflex(NvApiTypes::PFN_NvApi_QueryInterface &queryInterface, NvApiTypes::NV_INTERFACE InterfaceId) {
+	inline static void hookReflex(NvApiTypes::PFN_NvApi_QueryInterface &queryInterface) {
 #ifdef _DEBUG
 		LOG_FUNC();
 #endif
 
-		if (o_NvAPI_D3D_SetSleepMode == nullptr || o_NvAPI_D3D_Sleep == nullptr || o_NvAPI_D3D_GetLatency == nullptr || o_NvAPI_D3D_SetLatencyMarker == nullptr || o_NvAPI_D3D12_SetAsyncFrameMarker == nullptr) {
+		if (!_inited) {
 			o_NvAPI_D3D_SetSleepMode = static_cast<decltype(&NvAPI_D3D_SetSleepMode)>(queryInterface(NvApiTypes::NV_INTERFACE::D3D_SetSleepMode));
 			o_NvAPI_D3D_Sleep = static_cast<decltype(&NvAPI_D3D_Sleep)>(queryInterface(NvApiTypes::NV_INTERFACE::D3D_Sleep));
 			o_NvAPI_D3D_GetLatency = static_cast<decltype(&NvAPI_D3D_GetLatency)>(queryInterface(NvApiTypes::NV_INTERFACE::D3D_GetLatency));
@@ -77,6 +77,10 @@ public:
 			o_NvAPI_D3D12_SetAsyncFrameMarker = static_cast<decltype(&NvAPI_D3D12_SetAsyncFrameMarker)>(queryInterface(NvApiTypes::NV_INTERFACE::D3D12_SetAsyncFrameMarker));
 		}
 
+		_inited = o_NvAPI_D3D_SetSleepMode != nullptr && o_NvAPI_D3D_Sleep != nullptr && o_NvAPI_D3D_GetLatency != nullptr && o_NvAPI_D3D_SetLatencyMarker != nullptr && o_NvAPI_D3D12_SetAsyncFrameMarker != nullptr;
+	}
+
+	inline static void* getHookedReflex(NvApiTypes::NV_INTERFACE InterfaceId) {
 		switch (InterfaceId) {
 		case NvApiTypes::NV_INTERFACE::D3D_SetSleepMode:
 			if (o_NvAPI_D3D_SetSleepMode != nullptr)
