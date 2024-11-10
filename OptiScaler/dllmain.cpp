@@ -7,6 +7,8 @@
 #include "NVNGX_Proxy.h"
 #include "XeSS_Proxy.h"
 #include "FfxApi_Proxy.h"
+#include "Gdi32_Proxy.h"
+#include "Streamline_Proxy.h"
 
 #include "hooks/HooksDx.h"
 #include "hooks/HooksVk.h"
@@ -160,6 +162,18 @@ inline std::vector<std::string> vkNames =
     "vulkan-1",
 };
 
+inline std::vector<std::wstring> streamlineNamesW =
+{
+    L"sl.interposer.dll",
+    L"sl.interposer",
+};
+
+inline std::vector<std::string> streamlineNames =
+{
+    "sl.interposer.dll",
+    "sl.interposer",
+};
+
 inline std::vector<std::wstring> dllNamesW;
 
 static int loadCount = 0;
@@ -208,7 +222,7 @@ inline static bool CheckDllNameW(std::wstring* dllName, std::vector<std::wstring
     return false;
 }
 
-inline static HMODULE LoadLibraryCheck(std::string lcaseLibName)
+inline static HMODULE LoadLibraryCheck(std::string lcaseLibName, LPCSTR lpLibFullPath)
 {
     // If Opti is not loading as nvngx.dll
     if (!isWorkingWithEnabler && !Config::Instance()->upscalerDisableHook)
@@ -263,6 +277,16 @@ inline static HMODULE LoadLibraryCheck(std::string lcaseLibName)
         }
     }
 
+    // sl.interposer.dll
+    if (Config::Instance()->DLSSGMod.value_or(false) && CheckDllName(&lcaseLibName, &streamlineNames))
+    {
+        auto streamlineModule = o_LoadLibraryA(lpLibFullPath);
+
+        hookStreamline(streamlineModule);
+
+        return streamlineModule;
+    }
+
     // nvngx_dlss
     if (Config::Instance()->DLSSEnabled.value_or(true) && Config::Instance()->DLSSLibrary.has_value() && CheckDllName(&lcaseLibName, &nvngxDlss))
     {
@@ -313,7 +337,7 @@ inline static HMODULE LoadLibraryCheck(std::string lcaseLibName)
     return nullptr;
 }
 
-inline static HMODULE LoadLibraryCheckW(std::wstring lcaseLibName)
+inline static HMODULE LoadLibraryCheckW(std::wstring lcaseLibName, LPCWSTR lpLibFullPath)
 {
     auto lcaseLibNameA = wstring_to_string(lcaseLibName);
 
@@ -377,6 +401,16 @@ inline static HMODULE LoadLibraryCheckW(std::wstring lcaseLibName)
 
             // AMD without nvapi override should fall through
         }
+    }
+
+    // sl.interposer.dll
+    if (Config::Instance()->DLSSGMod.value_or(false) && CheckDllNameW(&lcaseLibName, &streamlineNamesW))
+    {
+        auto streamlineModule = o_LoadLibraryW(lpLibFullPath);
+
+        hookStreamline(streamlineModule);
+
+        return streamlineModule;
     }
 
     // Hooks
@@ -498,8 +532,11 @@ static HMODULE LoadNvgxDlss(std::wstring originalPath)
 
 static FARPROC hkGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 {
-    if (hModule == dllModule)
-        LOG_DEBUG("Trying to get process address of {0}", lpProcName);
+    //if (hModule == dllModule)
+    //    LOG_DEBUG("Trying to get process address of {0}", lpProcName);
+
+    if (hModule == GetModuleHandle(L"gdi32.dll") && lstrcmpA(lpProcName, "D3DKMTEnumAdapters2") == 0 && Config::Instance()->IsRunningOnLinux)
+        return (FARPROC)&customD3DKMTEnumAdapters2;
 
     return o_GetProcAddress(hModule, lpProcName);
 }
@@ -760,7 +797,7 @@ static HMODULE hkLoadLibraryA(LPCSTR lpLibFileName)
     LOG_TRACE("call: {0}", lcaseLibName);
 #endif // DEBUG
 
-    auto moduleHandle = LoadLibraryCheck(lcaseLibName);
+    auto moduleHandle = LoadLibraryCheck(lcaseLibName, lpLibFileName);
 
     if (moduleHandle != nullptr)
         return moduleHandle;
@@ -790,7 +827,7 @@ static HMODULE hkLoadLibraryW(LPCWSTR lpLibFileName)
     LOG_TRACE("call: {0}", wstring_to_string(lcaseLibName));
 #endif // DEBUG
 
-    auto moduleHandle = LoadLibraryCheckW(lcaseLibName);
+    auto moduleHandle = LoadLibraryCheckW(lcaseLibName, lpLibFileName);
 
     if (moduleHandle != nullptr)
         return moduleHandle;
@@ -820,7 +857,7 @@ static HMODULE hkLoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlag
     LOG_TRACE("call: {0}", lcaseLibName);
 #endif
 
-    auto moduleHandle = LoadLibraryCheck(lcaseLibName);
+    auto moduleHandle = LoadLibraryCheck(lcaseLibName, lpLibFileName);
 
     if (moduleHandle != nullptr)
         return moduleHandle;
@@ -851,7 +888,7 @@ static HMODULE hkLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFla
     LOG_TRACE("call: {0}", wstring_to_string(lcaseLibName));
 #endif
 
-    auto moduleHandle = LoadLibraryCheckW(lcaseLibName);
+    auto moduleHandle = LoadLibraryCheckW(lcaseLibName, lpLibFileName);
 
     if (moduleHandle != nullptr)
         return moduleHandle;
@@ -1352,9 +1389,7 @@ static void AttachHooks()
         o_GetModuleHandleExA = reinterpret_cast<PFN_GetModuleHandleExA>(DetourFindFunction("kernel32.dll", "GetModuleHandleExA"));
         o_GetModuleHandleExW = reinterpret_cast<PFN_GetModuleHandleExW>(DetourFindFunction("kernel32.dll", "GetModuleHandleExW"));
 #endif
-#ifdef _DEBUG
-        //o_GetProcAddress = reinterpret_cast<PFN_GetProcAddress>(DetourFindFunction("kernel32.dll", "GetProcAddress"));
-#endif // DEBUG
+        o_GetProcAddress = reinterpret_cast<PFN_GetProcAddress>(DetourFindFunction("kernel32.dll", "GetProcAddress"));
 
         if (o_LoadLibraryA != nullptr || o_LoadLibraryW != nullptr || o_LoadLibraryExA != nullptr || o_LoadLibraryExW != nullptr)
         {
@@ -1769,6 +1804,17 @@ static void CheckWorkingMode()
             NvApiHooks::Hook(nvapi64);
         }
 
+        hookGdi32();
+
+        // hook streamline right away if it's already loaded
+        HMODULE slModule = nullptr;
+        slModule = GetModuleHandle(L"sl.interposer.dll");
+        if (slModule != nullptr) 
+        {
+            LOG_DEBUG("sl.interposer.dll already in memory");
+            hookStreamline(slModule);
+        }
+
         Config::Instance()->WorkingAsNvngx = isNvngxMode && !isWorkingWithEnabler;
         Config::Instance()->OverlayMenu = (!isNvngxMode || isWorkingWithEnabler) && Config::Instance()->OverlayMenu.value_or(true);
 
@@ -1804,6 +1850,14 @@ static void CheckWorkingMode()
     }
 
     LOG_ERROR("Unsupported dll name: {0}", filename);
+}
+
+static void CheckQuirks() {
+    auto exePathFilename = Util::ExePath().filename();
+    if (exePathFilename == "Cyberpunk2077.exe") {
+        Config::Instance()->gameQuirk = Cyberpunk;
+        LOG_INFO("Enabling a quirk for Cyberpunk");
+    }
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
@@ -1901,6 +1955,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             CheckWorkingMode();
             spdlog::info("");
 
+            CheckQuirks();
+
             for (size_t i = 0; i < 300; i++)
             {
                 Config::Instance()->frameTimes.push_back(0.0);
@@ -1916,7 +1972,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         case DLL_PROCESS_DETACH:
             // Unhooking and cleaning stuff causing issues during shutdown. 
             // Disabled for now to check if it cause any issues
-            //DetachHooks();
+            UnhookApis();
+            unhookStreamline();
+            unhookGdi32();
+            DetachHooks();
 
             //if (skHandle != nullptr)
             //    FreeLibrary(skHandle);
