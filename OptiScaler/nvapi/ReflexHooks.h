@@ -9,6 +9,7 @@ class ReflexHooks {
 	inline static NV_SET_SLEEP_MODE_PARAMS _lastSleepParams{};
 	inline static IUnknown* _lastSleepDev = nullptr;
 	inline static bool _markersPresent = false;
+	inline static bool _dlssgDetected = false;
 
 	inline static decltype(&NvAPI_D3D_SetSleepMode) o_NvAPI_D3D_SetSleepMode = nullptr;
 	inline static decltype(&NvAPI_D3D_Sleep) o_NvAPI_D3D_Sleep = nullptr;
@@ -59,6 +60,33 @@ class ReflexHooks {
 #ifdef _DEBUG
 		LOG_FUNC();
 #endif
+
+		if (pSetAsyncFrameMarkerParams->markerType == OUT_OF_BAND_PRESENT_START) {
+			constexpr size_t history_size = 12;
+			static size_t counter = 0;
+			static NvU64 previous_frame_ids[history_size] = {};
+
+			previous_frame_ids[counter % history_size] = pSetAsyncFrameMarkerParams->frameID;
+			counter++;
+
+			int repeat_count = 0;
+
+			for (size_t i = 1; i < history_size; i++) {
+				// won't catch repeat frame ids across array wrap around
+				if (previous_frame_ids[i] == previous_frame_ids[i - 1]) {
+					repeat_count++;
+				}
+			}
+
+			if (_dlssgDetected && repeat_count == 0) {
+				_dlssgDetected = false;
+				LOG_DEBUG("DLSS FG no longer detected");
+			}
+			else if (!_dlssgDetected && repeat_count >= history_size / 2 - 1) {
+				_dlssgDetected = true;
+				LOG_DEBUG("DLSS FG detected");
+			}
+		}
 
 		return o_NvAPI_D3D12_SetAsyncFrameMarker(pCommandQueue, pSetAsyncFrameMarkerParams);
 	}
@@ -116,7 +144,7 @@ public:
 		static float lastFps = 0;
 		float currentFps = Config::Instance()->FramerateLimit.value_or(0);
 
-		if (fgState)
+		if (fgState || _dlssgDetected)
 			currentFps = currentFps / 2;
 
 		if (currentFps != lastFps) {
