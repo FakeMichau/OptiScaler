@@ -22,25 +22,32 @@ private:
     inline static bool dx12_inited = false;
 public:
     static void InitDLSSGMod_Dx12() {
+        LOG_FUNC();
+
         if (dx12_inited)
             return;
 
         if (Config::Instance()->DLSSGMod.value_or(false) && !Config::Instance()->DE_Available && _dll == nullptr) {
             _dll = LoadLibraryW(L"dlssg_to_fsr3_amd_is_better.dll");
-        }
 
-        if (_dll != nullptr) {
-            _DLSSG_D3D12_Init = (PFN_D3D12_Init)GetProcAddress(_dll, "NVSDK_NGX_D3D12_Init");
-            _DLSSG_D3D12_Init_Ext = (PFN_D3D12_Init_Ext)GetProcAddress(_dll, "NVSDK_NGX_D3D12_Init_Ext");
-            _DLSSG_D3D12_Shutdown = (PFN_D3D12_Shutdown)GetProcAddress(_dll, "NVSDK_NGX_D3D12_Shutdown");
-            _DLSSG_D3D12_Shutdown1 = (PFN_D3D12_Shutdown1)GetProcAddress(_dll, "NVSDK_NGX_D3D12_Shutdown1");
-            _DLSSG_D3D12_GetScratchBufferSize = (PFN_D3D12_GetScratchBufferSize)GetProcAddress(_dll, "NVSDK_NGX_D3D12_GetScratchBufferSize");
-            _DLSSG_D3D12_CreateFeature = (PFN_D3D12_CreateFeature)GetProcAddress(_dll, "NVSDK_NGX_D3D12_CreateFeature");
-            _DLSSG_D3D12_ReleaseFeature = (PFN_D3D12_ReleaseFeature)GetProcAddress(_dll, "NVSDK_NGX_D3D12_ReleaseFeature");
-            _DLSSG_D3D12_GetFeatureRequirements = (PFN_D3D12_GetFeatureRequirements)GetProcAddress(_dll, "NVSDK_NGX_D3D12_GetFeatureRequirements");
-            _DLSSG_D3D12_EvaluateFeature = (PFN_D3D12_EvaluateFeature)GetProcAddress(_dll, "NVSDK_NGX_D3D12_EvaluateFeature");
-            _DLSSG_D3D12_PopulateParameters_Impl = (PFN_D3D12_PopulateParameters_Impl)GetProcAddress(_dll, "NVSDK_NGX_D3D12_PopulateParameters_Impl");
-            dx12_inited = true;
+            if (_dll != nullptr) {
+                _DLSSG_D3D12_Init = (PFN_D3D12_Init)GetProcAddress(_dll, "NVSDK_NGX_D3D12_Init");
+                _DLSSG_D3D12_Init_Ext = (PFN_D3D12_Init_Ext)GetProcAddress(_dll, "NVSDK_NGX_D3D12_Init_Ext");
+                _DLSSG_D3D12_Shutdown = (PFN_D3D12_Shutdown)GetProcAddress(_dll, "NVSDK_NGX_D3D12_Shutdown");
+                _DLSSG_D3D12_Shutdown1 = (PFN_D3D12_Shutdown1)GetProcAddress(_dll, "NVSDK_NGX_D3D12_Shutdown1");
+                _DLSSG_D3D12_GetScratchBufferSize = (PFN_D3D12_GetScratchBufferSize)GetProcAddress(_dll, "NVSDK_NGX_D3D12_GetScratchBufferSize");
+                _DLSSG_D3D12_CreateFeature = (PFN_D3D12_CreateFeature)GetProcAddress(_dll, "NVSDK_NGX_D3D12_CreateFeature");
+                _DLSSG_D3D12_ReleaseFeature = (PFN_D3D12_ReleaseFeature)GetProcAddress(_dll, "NVSDK_NGX_D3D12_ReleaseFeature");
+                _DLSSG_D3D12_GetFeatureRequirements = (PFN_D3D12_GetFeatureRequirements)GetProcAddress(_dll, "NVSDK_NGX_D3D12_GetFeatureRequirements");
+                _DLSSG_D3D12_EvaluateFeature = (PFN_D3D12_EvaluateFeature)GetProcAddress(_dll, "NVSDK_NGX_D3D12_EvaluateFeature");
+                _DLSSG_D3D12_PopulateParameters_Impl = (PFN_D3D12_PopulateParameters_Impl)GetProcAddress(_dll, "NVSDK_NGX_D3D12_PopulateParameters_Impl");
+                dx12_inited = true;
+
+                LOG_INFO("DLSSG Mod initialized for DX12");
+            }
+            else {
+                LOG_INFO("DLSSG Mod enabled but cannot be loaded");
+            }
         }
     }
 
