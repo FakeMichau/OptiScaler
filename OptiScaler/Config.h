@@ -18,7 +18,7 @@ typedef enum GameQuirk
 {
 	Other,
 	Cyberpunk
-};
+} GameQuirk;
 
 class Config
 {
