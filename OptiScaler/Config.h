@@ -178,6 +178,7 @@ public:
 	std::optional<bool> FGAsync;
 	std::optional<bool> FGHUDFix;
 	std::optional<bool> FGHUDFixExtended;
+	std::optional<bool> FGImmediateCapture;
 	std::optional<int> FGHUDLimit;
 	std::optional<int> FGRectLeft;
 	std::optional<int> FGRectTop;

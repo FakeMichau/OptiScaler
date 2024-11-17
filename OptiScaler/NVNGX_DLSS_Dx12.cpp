@@ -37,6 +37,7 @@
 static UINT64 fgLastFrameTime = 0;
 #endif
 static UINT64 fgLastFGFrame = 0;
+static UINT fgCallbackFrameIndex = 0;
 
 static ankerl::unordered_dense::map <unsigned int, std::unique_ptr<IFeature_Dx12>> Dx12Contexts;
 static ID3D12Device* D3D12Device = nullptr;
@@ -1303,7 +1304,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
 #ifdef USE_QUEUE_FOR_FG
         auto allocator = FrameGen_Dx12::fgCommandAllocators[frameIndex];
         auto result = allocator->Reset();
-        result = FrameGen_Dx12::fgCommandList->Reset(allocator, nullptr);
+        result = FrameGen_Dx12::fgCommandList[frameIndex]->Reset(allocator, nullptr);
         allocatorReset = true;
 #endif
 
@@ -1311,7 +1312,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         {
             auto allocator = FrameGen_Dx12::fgCommandAllocators[frameIndex];
             auto result = allocator->Reset();
-            result = FrameGen_Dx12::fgCommandList->Reset(allocator, nullptr);
+            result = FrameGen_Dx12::fgCommandList[frameIndex]->Reset(allocator, nullptr);
         }
 
         ID3D12GraphicsCommandList* commandList = nullptr;
@@ -1433,6 +1434,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
             FrameGen_Dx12::fgContext != nullptr && HooksDx::currentSwapchain != nullptr)
         {
             FrameGen_Dx12::upscaleRan = true;
+            fgCallbackFrameIndex = frameIndex;
 
 #ifndef USE_PRESENT_FOR_FT
             float msDelta = 0.0;
@@ -1498,12 +1500,15 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                 m_FrameGenerationConfig.frameGenerationCallbackUserContext = &FrameGen_Dx12::fgContext;
                 m_FrameGenerationConfig.frameGenerationCallback = [](ffxDispatchDescFrameGeneration* params, void* pUserCtx) -> ffxReturnCode_t
                     {
-                        auto fIndex = FrameGen_Dx12::GetFrame();
+                        auto fIndex = fgCallbackFrameIndex;
 
                         // check for status
                         if (!Config::Instance()->FGEnabled.value_or(false) || Config::Instance()->FGChanged ||
-                            FrameGen_Dx12::fgContext == nullptr || FrameGen_Dx12::fgCommandList == nullptr ||
-                            FrameGen_Dx12::fgCommandQueue == nullptr)
+                            FrameGen_Dx12::fgContext == nullptr 
+#ifdef USE_QUEUE_FOR_FG
+                            || FrameGen_Dx12::fgCommandList[fIndex] == nullptr || FrameGen_Dx12::fgCommandQueue == nullptr
+#endif
+                            )
                         {
                             LOG_WARN("(FG) Cancel async dispatch fIndex: {}", fIndex);
                             FrameGen_Dx12::fgSkipHudlessChecks = false;
@@ -1514,12 +1519,12 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                         if (Config::Instance()->CurrentFeature == nullptr || !FrameGen_Dx12::fgIsActive ||
                             fgLastFGFrame == Config::Instance()->CurrentFeature->FrameCount())
                         {
-                            LOG_WARN("(FG) Callback without hudless! fIndex:{}", fIndex);
+                            LOG_WARN("(FG) Callback without active FG! fIndex:{}", fIndex);
 
 #ifdef USE_QUEUE_FOR_FG
                             auto allocator = FrameGen_Dx12::fgCommandAllocators[fIndex];
                             auto result = allocator->Reset();
-                            result = FrameGen_Dx12::fgCommandList->Reset(allocator, nullptr);
+                            result = FrameGen_Dx12::fgCommandList[fIndex]->Reset(allocator, nullptr);
 #endif
 
                             params->frameID = fgLastFGFrame;
@@ -1535,8 +1540,8 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                         {
 #ifdef USE_QUEUE_FOR_FG
                             ID3D12CommandList* cl[1] = { nullptr };
-                            auto result = FrameGen_Dx12::fgCommandList->Close();
-                            cl[0] = FrameGen_Dx12::fgCommandList;
+                            auto result = FrameGen_Dx12::fgCommandList[fIndex]->Close();
+                            cl[0] = FrameGen_Dx12::fgCommandList[fIndex];
                             FrameGen_Dx12::fgCommandQueue->ExecuteCommandLists(1, cl);
 
                             if (result != S_OK)
@@ -1577,7 +1582,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                     dfgPrepare.header.pNext = &backendDesc.header;
 
 #ifdef USE_QUEUE_FOR_FG
-                    dfgPrepare.commandList = FrameGen_Dx12::fgCommandList;
+                    dfgPrepare.commandList = FrameGen_Dx12::fgCommandList[fIndex];
 #else
                     dfgPrepare.commandList = InCmdList;
 #endif
