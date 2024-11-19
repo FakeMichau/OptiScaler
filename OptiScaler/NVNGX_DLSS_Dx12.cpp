@@ -920,6 +920,12 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
             InParameters->Set("DLSSG.CameraFar", cameraFar);
         }
 
+        // Workaround for a bug in Nukem's mod
+        if (uint32_t LowresMvec = 0; InParameters->Get("DLSSG.run_lowres_mvec_pass", &LowresMvec) == NVSDK_NGX_Result_Success && LowresMvec == 1) {
+            InParameters->Set("DLSSG.MVecsSubrectWidth", 0U);
+            InParameters->Set("DLSSG.MVecsSubrectHeight", 0U);
+        }
+
         // Make a copy of the depth going to the frame generator
         // Fixes an issue with the depth being corrupted on AMD under Windows
 
