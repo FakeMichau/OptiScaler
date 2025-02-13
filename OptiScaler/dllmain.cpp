@@ -619,10 +619,7 @@ static HMODULE LoadNvApi()
         nvapi = o_LoadLibraryW(Config::Instance()->NvapiDllPath->c_str());
 
         if (nvapi != nullptr)
-        {
             LOG_INFO("nvapi64.dll loaded from {0}", wstring_to_string(Config::Instance()->NvapiDllPath.value()));
-            return nvapi;
-        }
     }
 
     if (nvapi == nullptr)
@@ -631,10 +628,7 @@ static HMODULE LoadNvApi()
         nvapi = o_LoadLibraryW(localPath.wstring().c_str());
 
         if (nvapi != nullptr)
-        {
             LOG_INFO("nvapi64.dll loaded from {0}", wstring_to_string(localPath.wstring()));
-            return nvapi;
-        }
     }
 
     if (nvapi == nullptr)
@@ -642,13 +636,10 @@ static HMODULE LoadNvApi()
         nvapi = o_LoadLibraryW(L"nvapi64.dll");
 
         if (nvapi != nullptr)
-        {
             LOG_WARN("nvapi64.dll loaded from system!");
-            return nvapi;
-        }
     }
 
-    return nullptr;
+    return nvapi;
 }
 
 static HMODULE LoadNvngxDlss(std::wstring originalPath)

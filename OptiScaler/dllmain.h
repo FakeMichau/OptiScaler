@@ -2298,9 +2298,16 @@ Vendor GetHighPerformanceGpuVendor()
         }
 
         if (vendor == Vendor::Nvidia)
+        {
             Config::Instance()->DxgiSpoofing.set_volatile_value(false);
-        else
-            NVNGXProxy::UnloadNVNGX();
+        }
+    }
+
+    if (vendor != Vendor::Nvidia)
+    {
+        NVNGXProxy::UnloadNVNGX();
+        spdlog::info("Disabling DLSS");
+        Config::Instance()->DLSSEnabled.set_volatile_value(false);
     }
 
     return vendor;
