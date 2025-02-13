@@ -113,7 +113,6 @@ static int loadCount = 0;
 static bool dontCount = false;
 static bool isNvngxMode = false;
 static bool isWorkingWithEnabler = false;
-static bool isNvngxAvailable = false;
 
 void AttachHooks();
 void DetachHooks();
@@ -1258,8 +1257,9 @@ static VkResult hkvkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCreate
         LOG_DEBUG("extension spoofing is disabled");
 
         State::Instance().skipSpoofing = true;
-        return o_vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
+        auto result = o_vkCreateDevice(physicalDevice, pCreateInfo, pAllocator, pDevice);
         State::Instance().skipSpoofing = false;
+        return result;
     }
 
     LOG_DEBUG("layers ({0}):", pCreateInfo->enabledLayerCount);
@@ -1267,8 +1267,6 @@ static VkResult hkvkCreateDevice(VkPhysicalDevice physicalDevice, VkDeviceCreate
         LOG_DEBUG("  {0}", pCreateInfo->ppEnabledLayerNames[i]);
 
     std::vector<const char*> newExtensionList;
-
-    auto bVK_KHR_get_memory_requirements2 = false;
 
     LOG_DEBUG("checking extensions and removing VK_NVX_BINARY_IMPORT & VK_NVX_IMAGE_VIEW_HANDLE from list");
     for (size_t i = 0; i < pCreateInfo->enabledExtensionCount; i++)
@@ -1418,7 +1416,7 @@ static VkResult hkvkEnumerateInstanceExtensionProperties(const char* pLayerName,
 inline static void HookForDxgiSpoofing()
 {
     // hook dxgi when not working as dxgi.dll
-    if (dxgi.CreateDxgiFactory == nullptr && !isWorkingWithEnabler && !State::Instance().isDxgiMode && Config::Instance()->DxgiSpoofing.value_or_default())
+    if (dxgi.CreateDxgiFactory == nullptr && !isWorkingWithEnabler && !State::Instance().isDxgiMode)
     {
         LOG_INFO("DxgiSpoofing is enabled loading dxgi.dll");
 
@@ -2265,182 +2263,164 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     switch (ul_reason_for_call)
     {
         case DLL_PROCESS_ATTACH:
-            if (loadCount > 1)
-            {
-                LOG_INFO("DLL_PROCESS_ATTACH from module: {0:X}, count: {1}", (UINT64)hModule, loadCount);
-                return TRUE;
-            }
+        if (loadCount > 1)
+        {
+            LOG_INFO("DLL_PROCESS_ATTACH from module: {0:X}, count: {1}", (UINT64)hModule, loadCount);
+            return TRUE;
+        }
 
-            dllModule = hModule;
-            processId = GetCurrentProcessId();
+        dllModule = hModule;
+        processId = GetCurrentProcessId();
 
-            DisableThreadLibraryCalls(hModule);
+        DisableThreadLibraryCalls(hModule);
 
-            if (Config::Instance()->FGType.value_or_default() == FGType::OptiFG && Config::Instance()->FGDisableOverlays.value_or_default())
-                SetEnvironmentVariable(L"SteamNoOverlayUIDrawing", L"1");
+        if (Config::Instance()->FGType.value_or_default() == FGType::OptiFG && Config::Instance()->FGDisableOverlays.value_or_default())
+            SetEnvironmentVariable(L"SteamNoOverlayUIDrawing", L"1");
 
-            loadCount++;
+        loadCount++;
 
 #ifdef VER_PRE_RELEASE
-            // Enable file logging for pre builds
-            Config::Instance()->LogToFile.set_volatile_value(true);
+        // Enable file logging for pre builds
+        Config::Instance()->LogToFile.set_volatile_value(true);
 
-            // Set log level to debug
-            if (Config::Instance()->LogLevel.value_or_default() > 1)
-                Config::Instance()->LogLevel.set_volatile_value(1);
+        // Set log level to debug
+        if (Config::Instance()->LogLevel.value_or_default() > 1)
+            Config::Instance()->LogLevel.set_volatile_value(1);
 #endif
 
-            PrepareLogger();
-            spdlog::warn("{0} loaded", VER_PRODUCT_NAME);
-            spdlog::warn("---------------------------------");
-            spdlog::warn("OptiScaler is freely downloadable from");
-            spdlog::warn("GitHub : https://github.com/cdozdil/OptiScaler/releases");
-            spdlog::warn("Nexus  : https://www.nexusmods.com/site/mods/986");
-            spdlog::warn("If you paid for these files, you've been scammed!");
-            spdlog::warn("DO NOT USE IN MULTIPLAYER GAMES");
-            spdlog::warn("");
-            spdlog::warn("LogLevel: {0}", Config::Instance()->LogLevel.value_or_default());
+        PrepareLogger();
+        spdlog::warn("{0} loaded", VER_PRODUCT_NAME);
+        spdlog::warn("---------------------------------");
+        spdlog::warn("OptiScaler is freely downloadable from");
+        spdlog::warn("GitHub : https://github.com/cdozdil/OptiScaler/releases");
+        spdlog::warn("Nexus  : https://www.nexusmods.com/site/mods/986");
+        spdlog::warn("If you paid for these files, you've been scammed!");
+        spdlog::warn("DO NOT USE IN MULTIPLAYER GAMES");
+        spdlog::warn("");
+        spdlog::warn("LogLevel: {0}", Config::Instance()->LogLevel.value_or_default());
 
-            // Check for Wine
-            skipGetModuleHandle = true;
+        // Check for Wine
+        skipGetModuleHandle = true;
+        spdlog::info("");
+        State::Instance().isRunningOnLinux = IsRunningOnWine();
+        State::Instance().isRunningOnDXVK = State::Instance().isRunningOnLinux;
+        skipGetModuleHandle = false;
+
+        spdlog::info("");
+        CheckQuirks();
+
+        // Check if real DLSS available
+        if (Config::Instance()->DLSSEnabled.value_or_default())
+        {
             spdlog::info("");
-            State::Instance().isRunningOnLinux = IsRunningOnWine();
-            State::Instance().isRunningOnDXVK = State::Instance().isRunningOnLinux;
+            skipGetModuleHandle = true;
+            NVNGXProxy::InitNVNGX();
             skipGetModuleHandle = false;
 
-            spdlog::info("");
-            CheckQuirks();
-
-            // Check if real DLSS available
-            if (Config::Instance()->DLSSEnabled.value_or_default())
+            if (NVNGXProxy::NVNGXModule() == nullptr)
             {
-                spdlog::info("");
-                skipGetModuleHandle = true;
-                NVNGXProxy::InitNVNGX();
-                skipGetModuleHandle = false;
-
-                if (NVNGXProxy::NVNGXModule() == nullptr)
-                {
-                    spdlog::info("Can't load nvngx.dll, disabling DLSS");
-                    Config::Instance()->DLSSEnabled.set_volatile_value(false);
-                }
-                else
-                {
-                    spdlog::info("nvngx.dll loaded, setting DLSS as default upscaler and disabling spoofing options set to auto");
-
-                    Config::Instance()->DLSSEnabled.set_volatile_value(true);
-
-                    if (!Config::Instance()->DxgiSpoofing.has_value())
-                        Config::Instance()->DxgiSpoofing.set_volatile_value(false);
-
-                    isNvngxAvailable = true;
-                    State::Instance().isRunningOnNvidia = true;
-                }
+                spdlog::info("Can't load nvngx.dll, disabling DLSS");
+                Config::Instance()->DLSSEnabled.set_volatile_value(false);
             }
-
-            if (!Config::Instance()->OverrideNvapiDll.has_value())
+            else
             {
-                spdlog::info("OverrideNvapiDll not set, setting it to: {}", !State::Instance().isRunningOnNvidia ? "true" : "false");
-                Config::Instance()->OverrideNvapiDll.set_volatile_value(!State::Instance().isRunningOnNvidia);
+                // We might not be on Nvidia
+                spdlog::info("nvngx.dll loaded, setting DLSS as default upscaler and disabling spoofing options set to auto");
+                Config::Instance()->DLSSEnabled.set_volatile_value(true);
             }
+        }
 
-            // Check for working mode and attach hooks
-            spdlog::info("");
-            CheckWorkingMode();
-            spdlog::info("");
+        // Check for working mode and attach hooks
+        spdlog::info("");
+        CheckWorkingMode();
+        spdlog::info("");
 
-            if (!State::Instance().nvngxExists && !Config::Instance()->DxgiSpoofing.has_value())
-            {
-                LOG_WARN("No nvngx.dll found disabling spoofing!");
-                Config::Instance()->DxgiSpoofing.set_volatile_value(false);
-            }
+        State::Instance().skipDllLoadChecks = true;
 
-            State::Instance().skipDllLoadChecks = true;
+        // Init XeSS proxy
+        // Disabled early loading of libxess
+        //if (!XeSSProxy::InitXeSS())
+        //    spdlog::warn("Can't init XeSS!");
 
-            // Init XeSS proxy
-            // Disabled early loading of libxess
-            //if (!XeSSProxy::InitXeSS())
-            //    spdlog::warn("Can't init XeSS!");
+        // Init FfxApi proxy
+        if (!FfxApiProxy::InitFfxDx12())
+            spdlog::warn("Can't init Dx12 FfxApi!");
 
-            // Init FfxApi proxy
-            if (!FfxApiProxy::InitFfxDx12())
-                spdlog::warn("Can't init Dx12 FfxApi!");
+        if (!FfxApiProxy::InitFfxVk())
+            spdlog::warn("Can't init Vulkan FfxApi!");
 
-            if (!FfxApiProxy::InitFfxVk())
-                spdlog::warn("Can't init Vulkan FfxApi!");
+        spdlog::info("");
+        handle = GetModuleHandle(fsr2NamesW[0].c_str());
+        if (handle != nullptr)
+            HookFSR2Inputs(handle);
 
-            spdlog::info("");
-            handle = GetModuleHandle(fsr2NamesW[0].c_str());
-            if (handle != nullptr)
-                HookFSR2Inputs(handle);
+        handle = GetModuleHandle(fsr2BENamesW[0].c_str());
+        if (handle != nullptr)
+            HookFSR2Dx12Inputs(handle);
 
-            handle = GetModuleHandle(fsr2BENamesW[0].c_str());
-            if (handle != nullptr)
-                HookFSR2Dx12Inputs(handle);
+        spdlog::info("");
 
-            spdlog::info("");
+        HookFSR2ExeInputs();
 
-            HookFSR2ExeInputs();
+        handle = GetModuleHandle(fsr3NamesW[0].c_str());
+        if (handle != nullptr)
+            HookFSR3Inputs(handle);
 
-            handle = GetModuleHandle(fsr3NamesW[0].c_str());
-            if (handle != nullptr)
-                HookFSR3Inputs(handle);
+        handle = GetModuleHandle(fsr3BENamesW[0].c_str());
+        if (handle != nullptr)
+            HookFSR3Dx12Inputs(handle);
 
-            handle = GetModuleHandle(fsr3BENamesW[0].c_str());
-            if (handle != nullptr)
-                HookFSR3Dx12Inputs(handle);
+        HookFSR3ExeInputs();
 
-            HookFSR3ExeInputs();
+        State::Instance().skipDllLoadChecks = false;
 
-            State::Instance().skipDllLoadChecks = false;
+        // Initial state of FSR-FG
+        State::Instance().activeFgType = Config::Instance()->FGType.value_or_default();
 
-            // Initial state of FSR-FG
-            State::Instance().activeFgType = Config::Instance()->FGType.value_or_default();
+        for (size_t i = 0; i < 300; i++)
+        {
+            State::Instance().frameTimes.push_back(0.0f);
+            State::Instance().upscaleTimes.push_back(0.0f);
+        }
 
-            for (size_t i = 0; i < 300; i++)
-            {
-                State::Instance().frameTimes.push_back(0.0f);
-                State::Instance().upscaleTimes.push_back(0.0f);
-            }
-
-            spdlog::info("");
-            spdlog::info("Init done");
-            spdlog::info("---------------------------------------------");
-            spdlog::info("");
+        spdlog::info("");
+        spdlog::info("Init done");
+        spdlog::info("---------------------------------------------");
+        spdlog::info("");
 
             break;
 
         case DLL_PROCESS_DETACH:
-            // Unhooking and cleaning stuff causing issues during shutdown. 
-            // Disabled for now to check if it cause any issues
-            UnhookApis();
-            unhookStreamline();
-            unhookGdi32();
-            DetachHooks();
+        // Unhooking and cleaning stuff causing issues during shutdown. 
+        // Disabled for now to check if it cause any issues
+        UnhookApis();
+        unhookStreamline();
+        unhookGdi32();
+        DetachHooks();
 
-            if (skHandle != nullptr)
-                FreeLibrary(skHandle);
+        if (skHandle != nullptr)
+            FreeLibrary(skHandle);
 
-            if (reshadeHandle != nullptr)
-                FreeLibrary(reshadeHandle);
+        if (reshadeHandle != nullptr)
+            FreeLibrary(reshadeHandle);
 
-            spdlog::info("");
-            spdlog::info("DLL_PROCESS_DETACH");
-            spdlog::info("Unloading OptiScaler");
-            CloseLogger();
+        spdlog::info("");
+        spdlog::info("DLL_PROCESS_DETACH");
+        spdlog::info("Unloading OptiScaler");
+        CloseLogger();
 
             break;
 
         case DLL_THREAD_ATTACH:
-            LOG_DEBUG_ONLY("DLL_THREAD_ATTACH from module: {0:X}, count: {1}", (UINT64)hModule, loadCount);
+        LOG_DEBUG_ONLY("DLL_THREAD_ATTACH from module: {0:X}, count: {1}", (UINT64)hModule, loadCount);
             break;
 
         case DLL_THREAD_DETACH:
-            LOG_DEBUG_ONLY("DLL_THREAD_DETACH from module: {0:X}, count: {1}", (UINT64)hModule, loadCount);
+        LOG_DEBUG_ONLY("DLL_THREAD_DETACH from module: {0:X}, count: {1}", (UINT64)hModule, loadCount);
             break;
 
         default:
-            LOG_WARN("Call reason: {0:X}", ul_reason_for_call);
+        LOG_WARN("Call reason: {0:X}", ul_reason_for_call);
             break;
     }
 

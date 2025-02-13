@@ -27,12 +27,23 @@ typedef enum FGType : uint32_t
 	Nukems
 } FGType;
 
+enum class Vendor
+{
+	Unknown,
+	AMD,
+	Intel,
+	Nvidia,
+	Other = 0xFF,
+};
+
 class State {
 public:
     static State& Instance() {
         static State instance;
         return instance;
     }
+
+	Vendor vendor = Vendor::Unknown;
 
 	// DLSSG
 	GameQuirk gameQuirk = GameQuirk::Other;
@@ -112,7 +123,6 @@ public:
 	// Linux check
 	bool isRunningOnLinux = false;
 	bool isRunningOnDXVK = false;
-	bool isRunningOnNvidia = false;
 
 	bool isDxgiMode = false;
 	bool isWorkingAsNvngx = false;

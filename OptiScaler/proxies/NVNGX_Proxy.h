@@ -217,6 +217,8 @@ private:
     inline static bool _dx12Inited = false;
     inline static bool _vulkanInited = false;
 
+    inline static bool _blockInit = false;
+
     inline static PFN_CUDA_Init _CUDA_Init = nullptr;
     inline static PFN_CUDA_Init_ProjectID _CUDA_Init_ProjectID = nullptr;
     inline static PFN_CUDA_Shutdown _CUDA_Shutdown = nullptr;
@@ -292,7 +294,7 @@ public:
     static void InitNVNGX()
     {
         // if dll already loaded
-        if (_dll != nullptr)
+        if (_dll != nullptr || _blockInit)
             return;
 
         LOG_INFO("");
@@ -465,6 +467,88 @@ public:
         }
 
         State::Instance().upscalerDisableHook = false;
+    }
+
+    static void UnloadNVNGX()
+    {
+        _blockInit = true;
+
+        if (_dll) {
+            spdlog::warn("Unloading NVNGX!");
+            spdlog::warn("You might have two graphics drivers installed at once");
+            FreeLibrary(_dll);
+        }
+
+        _dll = nullptr;
+        _cudaInited = false;
+        _dx11Inited = false;
+        _dx12Inited = false;
+        _vulkanInited = false;
+
+        _CUDA_Init = nullptr;
+        _CUDA_Init_ProjectID = nullptr;
+        _CUDA_Shutdown = nullptr;
+        _CUDA_GetParameters = nullptr;
+        _CUDA_AllocateParameters = nullptr;
+        _CUDA_GetCapabilityParameters = nullptr;
+        _CUDA_DestroyParameters = nullptr;
+        _CUDA_GetScratchBufferSize = nullptr;
+        _CUDA_CreateFeature = nullptr;
+        _CUDA_EvaluateFeature = nullptr;
+        _CUDA_ReleaseFeature = nullptr;
+
+        _D3D11_Init = nullptr;
+        _D3D11_Init_ProjectID = nullptr;
+        _D3D11_Init_Ext = nullptr;
+        _D3D11_Shutdown = nullptr;
+        _D3D11_Shutdown1 = nullptr;
+        _D3D11_GetParameters = nullptr;
+        _D3D11_AllocateParameters = nullptr;
+        _D3D11_GetCapabilityParameters = nullptr;
+        _D3D11_DestroyParameters = nullptr;
+        _D3D11_GetScratchBufferSize = nullptr;
+        _D3D11_CreateFeature = nullptr;
+        _D3D11_ReleaseFeature = nullptr;
+        _D3D11_GetFeatureRequirements = nullptr;
+        _D3D11_EvaluateFeature = nullptr;
+
+        _D3D12_Init = nullptr;
+        _D3D12_Init_ProjectID = nullptr;
+        _D3D12_Init_Ext = nullptr;
+        _D3D12_Shutdown = nullptr;
+        _D3D12_Shutdown1 = nullptr;
+        _D3D12_GetParameters = nullptr;
+        _D3D12_AllocateParameters = nullptr;
+        _D3D12_GetCapabilityParameters = nullptr;
+        _D3D12_DestroyParameters = nullptr;
+        _D3D12_GetScratchBufferSize = nullptr;
+        _D3D12_CreateFeature = nullptr;
+        _D3D12_ReleaseFeature = nullptr;
+        _D3D12_GetFeatureRequirements = nullptr;
+        _D3D12_EvaluateFeature = nullptr;
+
+        _VULKAN_RequiredExtensions = nullptr;
+        _VULKAN_Init = nullptr;
+        _VULKAN_Init_ProjectID = nullptr;
+        _VULKAN_Init_Ext = nullptr;
+        _VULKAN_Init_Ext2 = nullptr;
+        _VULKAN_Init_ProjectID_Ext = nullptr;
+        _VULKAN_Shutdown = nullptr;
+        _VULKAN_Shutdown1 = nullptr;
+        _VULKAN_GetParameters = nullptr;
+        _VULKAN_AllocateParameters = nullptr;
+        _VULKAN_GetCapabilityParameters = nullptr;
+        _VULKAN_DestroyParameters = nullptr;
+        _VULKAN_GetScratchBufferSize = nullptr;
+        _VULKAN_CreateFeature = nullptr;
+        _VULKAN_CreateFeature1 = nullptr;
+        _VULKAN_ReleaseFeature = nullptr;
+        _VULKAN_GetFeatureRequirements = nullptr;
+        _VULKAN_GetFeatureInstanceExtensionRequirements = nullptr;
+        _VULKAN_GetFeatureDeviceExtensionRequirements = nullptr;
+        _VULKAN_EvaluateFeature = nullptr;
+
+        _UpdateFeature = nullptr;
     }
 
     static void GetFeatureCommonInfo(NVSDK_NGX_FeatureCommonInfo* fcInfo)

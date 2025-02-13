@@ -7,11 +7,13 @@
 #include <dxgi1_6.h>
 #include <DbgHelp.h>
 
+#include "proxies/NVNGX_Proxy.h"
+
 #pragma region DXGI definitions
 
-typedef HRESULT(*PFN_CREATE_DXGI_FACTORY)(REFIID riid, IDXGIFactory** ppFactory);
-typedef HRESULT(*PFN_CREATE_DXGI_FACTORY_1)(REFIID riid, IDXGIFactory1** ppFactory);
-typedef HRESULT(*PFN_CREATE_DXGI_FACTORY_2)(UINT Flags, REFIID riid, IDXGIFactory2** ppFactory);
+typedef HRESULT(*PFN_CREATE_DXGI_FACTORY)(REFIID riid, void** ppFactory);
+typedef HRESULT(*PFN_CREATE_DXGI_FACTORY_1)(REFIID riid, void** ppFactory);
+typedef HRESULT(*PFN_CREATE_DXGI_FACTORY_2)(UINT Flags, REFIID riid, void** ppFactory);
 typedef HRESULT(*PFN_DECLARE_ADAPTER_REMOVAL_SUPPORT)();
 typedef HRESULT(*PFN_GET_DEBUG_INTERFACE)(UINT Flags, REFIID riid, void** ppDebug);
 
@@ -2245,38 +2247,107 @@ HRESULT WINAPI detEnumAdapters(IDXGIFactory* This, UINT Adapter, IDXGIAdapter** 
 
 #pragma region DXGI methods
 
-HRESULT _CreateDXGIFactory(REFIID riid, IDXGIFactory** ppFactory)
+Vendor GetHighPerformanceGpuVendor()
+{
+    IDXGIFactory6* dxgiFactory = nullptr;
+    if (!dxgi.CreateDxgiFactory1 || FAILED(dxgi.CreateDxgiFactory1(IID_PPV_ARGS(&dxgiFactory))))
+    {
+        return Vendor::Unknown;
+    }
+
+    IDXGIAdapter1* adapter = nullptr;
+    if (FAILED(dxgiFactory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter))))
+    {
+        dxgiFactory->Release();
+        return Vendor::Unknown;
+    }
+
+    DXGI_ADAPTER_DESC1 desc;
+    if (FAILED(adapter->GetDesc1(&desc)))
+    {
+        adapter->Release();
+        dxgiFactory->Release();
+        return Vendor::Unknown;
+    }
+
+    adapter->Release();
+    dxgiFactory->Release();
+
+    auto vendor = Vendor::Other;
+
+    if (desc.VendorId == 0x1002)
+        vendor = Vendor::AMD;
+    if (desc.VendorId == 0x10DE)
+        vendor = Vendor::Nvidia;
+    if (desc.VendorId == 0x8086)
+        vendor = Vendor::Intel;
+
+    // TODO: find a better spot for this
+    if (!Config::Instance()->OverrideNvapiDll.has_value())
+    {
+        spdlog::info("OverrideNvapiDll not set, setting it to: {}", vendor != Vendor::Nvidia ? "true" : "false");
+        Config::Instance()->OverrideNvapiDll.set_volatile_value(vendor != Vendor::Nvidia);
+    }
+
+    if (!Config::Instance()->DxgiSpoofing.has_value())
+    {
+        if (!State::Instance().nvngxExists)
+        {
+            spdlog::warn("No nvngx.dll found disabling spoofing!");
+            Config::Instance()->DxgiSpoofing.set_volatile_value(false);
+        }
+
+        if (vendor == Vendor::Nvidia)
+            Config::Instance()->DxgiSpoofing.set_volatile_value(false);
+        else
+            NVNGXProxy::UnloadNVNGX();
+    }
+
+    return vendor;
+}
+
+HRESULT _CreateDXGIFactory(REFIID riid, void** ppFactory)
 {
     State::Instance().skipDxgiLoadChecks = true;
     HRESULT result = dxgi.CreateDxgiFactory(riid, ppFactory);
+
+    if (State::Instance().vendor == Vendor::Unknown)
+        State::Instance().vendor = GetHighPerformanceGpuVendor();
+
     State::Instance().skipDxgiLoadChecks = false;
 
     if (result == S_OK)
-        AttachToFactory(*ppFactory);
+        AttachToFactory((IUnknown*)*ppFactory);
 
     return result;
 }
 
-HRESULT _CreateDXGIFactory1(REFIID riid, IDXGIFactory1** ppFactory)
+HRESULT _CreateDXGIFactory1(REFIID riid, void** ppFactory)
 {
     State::Instance().skipDxgiLoadChecks = true;
     HRESULT result = dxgi.CreateDxgiFactory1(riid, ppFactory);
     State::Instance().skipDxgiLoadChecks = false;
 
+    if (State::Instance().vendor == Vendor::Unknown)
+        State::Instance().vendor = GetHighPerformanceGpuVendor();
+
     if (result == S_OK)
-        AttachToFactory(*ppFactory);
+        AttachToFactory((IUnknown*)*ppFactory);
 
     return result;
 }
 
-HRESULT _CreateDXGIFactory2(UINT Flags, REFIID riid, IDXGIFactory2** ppFactory)
+HRESULT _CreateDXGIFactory2(UINT Flags, REFIID riid, void** ppFactory)
 {
     State::Instance().skipDxgiLoadChecks = true;
     HRESULT result = dxgi.CreateDxgiFactory2(Flags, riid, ppFactory);
     State::Instance().skipDxgiLoadChecks = false;
 
+    if (State::Instance().vendor == Vendor::Unknown)
+        State::Instance().vendor = GetHighPerformanceGpuVendor();
+
     if (result == S_OK)
-        AttachToFactory(*ppFactory);
+        AttachToFactory((IUnknown*)*ppFactory);
 
     return result;
 }

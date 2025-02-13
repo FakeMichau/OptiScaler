@@ -200,4 +200,3 @@ bool Util::GetDLLVersion(std::wstring dllPath, xess_version_t* xessVersionOut)
 
     return result;
 }
-

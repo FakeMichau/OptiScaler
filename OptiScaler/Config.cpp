@@ -177,11 +177,12 @@ bool Config::Reload(std::filesystem::path iniPath)
             LogAsyncThreads.set_from_config(readInt("Log", "LogAsyncThreads"));
 
             {
+                // set_from_config not used so the value doesn't get saved back to config
                 auto setting = readString("Log", "LogFile", false);
 
                 // Reproduce the old bug of "LogFile = " always disabling logs
                 if (setting.has_value() && setting.value().empty())
-                    LogFileName.set_from_config(L"");
+                    LogFileName.set_volatile_value(L"");
 
                 auto path = std::filesystem::path(setting.value_or(wstring_to_string(LogFileName.value_or_default())));
                 auto filenameStem = path.stem();
@@ -189,9 +190,9 @@ bool Config::Reload(std::filesystem::path iniPath)
                 auto filename = std::filesystem::path(LogSingleFile.value_or_default() ? filenameStem.wstring() + L".log" : filenameStem.wstring() + L"_" + std::to_wstring(GetTicks()) + L".log");
 
                 if (path.has_root_path())
-                    LogFileName.set_from_config((path.parent_path() / filename).wstring());
+                    LogFileName.set_volatile_value((path.parent_path() / filename).wstring());
                 else
-                    LogFileName.set_from_config((Util::DllPath().parent_path() / filename).wstring());
+                    LogFileName.set_volatile_value((Util::DllPath().parent_path() / filename).wstring());
             }
         }
 

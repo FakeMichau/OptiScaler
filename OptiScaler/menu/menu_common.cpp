@@ -1204,16 +1204,16 @@ bool MenuCommon::RenderMenu()
                     ImGui::Spacing();
                     ImGui::Text("Please select %s%s%s%s%s as upscaler\nfrom game options and enter the game\nto enable upscaler settings.\n",
                                 State::Instance().fsrHooks ? "FSR" : "",
-                                State::Instance().fsrHooks && (State::Instance().nvngxExists || State::Instance().isRunningOnNvidia) ? " or " : "",
-                                (State::Instance().nvngxExists || State::Instance().isRunningOnNvidia) ? "DLSS" : "",
-                                ((State::Instance().nvngxExists || State::Instance().isRunningOnNvidia) || State::Instance().fsrHooks) && State::Instance().libxessExists ? " or " : "",
+                                State::Instance().fsrHooks && (State::Instance().nvngxExists || State::Instance().vendor == Vendor::Nvidia) ? " or " : "",
+                                (State::Instance().nvngxExists || State::Instance().vendor == Vendor::Nvidia) ? "DLSS" : "",
+                                ((State::Instance().nvngxExists || State::Instance().vendor == Vendor::Nvidia) || State::Instance().fsrHooks) && State::Instance().libxessExists ? " or " : "",
                                 State::Instance().libxessExists ? "XeSS" : "");
 
 
                     ImGui::PopFont();
 
                     ImGui::Spacing();
-                    ImGui::Text("nvngx.dll: %sExist", State::Instance().nvngxExists || State::Instance().isRunningOnNvidia ? "" : "Not ");
+                    ImGui::Text("nvngx.dll: %sExist", State::Instance().nvngxExists || State::Instance().vendor == Vendor::Nvidia ? "" : "Not ");
                     ImGui::Text("libxess.dll: %sExist", State::Instance().libxessExists ? "" : "Not ");
                     ImGui::Text("fsr: %sExist", State::Instance().fsrHooks ? "" : "Not ");
                     ImGui::Spacing();
