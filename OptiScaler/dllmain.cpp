@@ -926,6 +926,8 @@ static HMODULE hkLoadLibraryA(LPCSTR lpLibFileName)
     if (lpLibFileName == nullptr)
         return NULL;
 
+    CheckCurrentVendor();
+
     if (State::Instance().skipDllLoadChecks) {
 #ifdef _DEBUG
         LOG_TRACE("skipping call: {0}", lpLibFileName);
@@ -966,6 +968,8 @@ static HMODULE hkLoadLibraryW(LPCWSTR lpLibFileName)
 {
     if (lpLibFileName == nullptr)
         return NULL;
+
+    CheckCurrentVendor();
 
     if (State::Instance().skipDllLoadChecks) {
 #ifdef _DEBUG
@@ -1009,6 +1013,8 @@ static HMODULE hkLoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlag
     if (lpLibFileName == nullptr)
         return NULL;
 
+    CheckCurrentVendor();
+
     if (State::Instance().skipDllLoadChecks) {
 #ifdef _DEBUG
         LOG_TRACE("skipping call: {0}", lpLibFileName);
@@ -1049,6 +1055,8 @@ static HMODULE hkLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFla
 {
     if (lpLibFileName == nullptr)
         return NULL;
+
+    CheckCurrentVendor();
 
     if (State::Instance().skipDllLoadChecks) {
 #ifdef _DEBUG
@@ -2334,7 +2342,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             else
             {
                 // We might not be on Nvidia
-                spdlog::info("nvngx.dll loaded, setting DLSS as default upscaler and disabling spoofing options set to auto");
+                spdlog::info("nvngx.dll loaded, setting DLSS as default upscaler");
                 Config::Instance()->DLSSEnabled.set_volatile_value(true);
             }
         }

@@ -2247,19 +2247,23 @@ HRESULT WINAPI detEnumAdapters(IDXGIFactory* This, UINT Adapter, IDXGIAdapter** 
 
 #pragma region DXGI methods
 
-Vendor GetHighPerformanceGpuVendor()
+// Uses gpu preference api
+void CheckCurrentVendor()
 {
+    if (State::Instance().vendor != Vendor::Unknown)
+        return;
+
     IDXGIFactory6* dxgiFactory = nullptr;
     if (!dxgi.CreateDxgiFactory1 || FAILED(dxgi.CreateDxgiFactory1(IID_PPV_ARGS(&dxgiFactory))))
     {
-        return Vendor::Unknown;
+        return;
     }
 
     IDXGIAdapter1* adapter = nullptr;
     if (FAILED(dxgiFactory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&adapter))))
     {
         dxgiFactory->Release();
-        return Vendor::Unknown;
+        return;
     }
 
     DXGI_ADAPTER_DESC1 desc;
@@ -2267,7 +2271,7 @@ Vendor GetHighPerformanceGpuVendor()
     {
         adapter->Release();
         dxgiFactory->Release();
-        return Vendor::Unknown;
+        return;
     }
 
     adapter->Release();
@@ -2310,7 +2314,7 @@ Vendor GetHighPerformanceGpuVendor()
         Config::Instance()->DLSSEnabled.set_volatile_value(false);
     }
 
-    return vendor;
+    State::Instance().vendor = vendor;
 }
 
 HRESULT _CreateDXGIFactory(REFIID riid, void** ppFactory)
@@ -2318,8 +2322,7 @@ HRESULT _CreateDXGIFactory(REFIID riid, void** ppFactory)
     State::Instance().skipDxgiLoadChecks = true;
     HRESULT result = dxgi.CreateDxgiFactory(riid, ppFactory);
 
-    if (State::Instance().vendor == Vendor::Unknown)
-        State::Instance().vendor = GetHighPerformanceGpuVendor();
+    CheckCurrentVendor();
 
     State::Instance().skipDxgiLoadChecks = false;
 
@@ -2335,8 +2338,7 @@ HRESULT _CreateDXGIFactory1(REFIID riid, void** ppFactory)
     HRESULT result = dxgi.CreateDxgiFactory1(riid, ppFactory);
     State::Instance().skipDxgiLoadChecks = false;
 
-    if (State::Instance().vendor == Vendor::Unknown)
-        State::Instance().vendor = GetHighPerformanceGpuVendor();
+    CheckCurrentVendor();
 
     if (result == S_OK)
         AttachToFactory((IUnknown*)*ppFactory);
@@ -2350,8 +2352,7 @@ HRESULT _CreateDXGIFactory2(UINT Flags, REFIID riid, void** ppFactory)
     HRESULT result = dxgi.CreateDxgiFactory2(Flags, riid, ppFactory);
     State::Instance().skipDxgiLoadChecks = false;
 
-    if (State::Instance().vendor == Vendor::Unknown)
-        State::Instance().vendor = GetHighPerformanceGpuVendor();
+    CheckCurrentVendor();
 
     if (result == S_OK)
         AttachToFactory((IUnknown*)*ppFactory);
