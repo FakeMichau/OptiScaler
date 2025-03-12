@@ -220,6 +220,9 @@ typedef void(*PFN_DrawIndexedInstanced)(ID3D12GraphicsCommandList* This, UINT In
 typedef void(*PFN_DrawInstanced)(ID3D12GraphicsCommandList* This, UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation, UINT StartInstanceLocation);
 typedef void(*PFN_Dispatch)(ID3D12GraphicsCommandList* This, UINT ThreadGroupCountX, UINT ThreadGroupCountY, UINT ThreadGroupCountZ);
 
+// Command queue hooks
+typedef void(*PFN_ExecuteCommandLists)(ID3D12CommandQueue* This, UINT numCommandLists, ID3D12CommandList* const* ppCommandLists);
+
 #ifdef USE_COPY_RESOURCE
 typedef void(*PFN_CopyResource)(ID3D12GraphicsCommandList* This, ID3D12Resource* pDstResource, ID3D12Resource* pSrcResource);
 typedef void(*PFN_CopyTextureRegion)(ID3D12GraphicsCommandList* This, D3D12_TEXTURE_COPY_LOCATION* pDst, UINT DstX, UINT DstY, UINT DstZ, D3D12_TEXTURE_COPY_LOCATION* pSrc, D3D12_BOX* pSrcBox);
@@ -457,6 +460,9 @@ static PFN_DrawIndexedInstanced o_DrawIndexedInstanced = nullptr;
 static PFN_OMSetRenderTargets o_OMSetRenderTargets = nullptr;
 static PFN_SetGraphicsRootDescriptorTable o_SetGraphicsRootDescriptorTable = nullptr;
 static PFN_SetComputeRootDescriptorTable o_SetComputeRootDescriptorTable = nullptr;
+
+// Original method calls for command queue
+static PFN_ExecuteCommandLists o_ExecuteCommandLists = nullptr;
 
 #ifdef USE_COPY_RESOURCE
 static PFN_CopyResource o_CopyResource = nullptr;
@@ -2166,6 +2172,22 @@ static void hkDispatch(ID3D12GraphicsCommandList* This, UINT ThreadGroupCountX, 
 
 #pragma endregion
 
+#pragma region Command lists hooks
+
+static void hkExecuteCommandLists(ID3D12CommandQueue* This, UINT numCommandLists, ID3D12CommandList* const* ppCommandLists) {
+    static std::unordered_map<ID3D12GraphicsCommandList*, ID3D12CommandQueue*> commandListToQueueMap;
+
+    // Track which queue is executing which command list
+    for (UINT i = 0; i < numCommandLists; ++i) {
+        ID3D12GraphicsCommandList* cmdList = static_cast<ID3D12GraphicsCommandList*>(ppCommandLists[i]);
+        commandListToQueueMap[cmdList] = This;
+    }
+
+    o_ExecuteCommandLists(This, numCommandLists, ppCommandLists);
+}
+
+#pragma endregion
+
 #pragma region Callbacks for wrapped swapchain
 
 static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
@@ -3467,6 +3489,32 @@ static void HookCommandList(ID3D12Device* InDevice)
     }
 }
 
+static void HookCommandQueue(ID3D12Device* InDevice) {
+    if (!InDevice || o_ExecuteCommandLists)
+        return;
+
+    ID3D12CommandQueue* queue = nullptr;
+
+    D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+    queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    queueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+    queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+    queueDesc.NodeMask = 0;
+
+    if (InDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&queue)) == S_OK) {
+        void** vtable = *reinterpret_cast<void***>(queue);
+
+        o_ExecuteCommandLists = (PFN_ExecuteCommandLists)vtable[10];
+
+        DetourTransactionBegin();
+        DetourUpdateThread(GetCurrentThread());
+        DetourAttach(&(PVOID&)o_ExecuteCommandLists, hkExecuteCommandLists);
+        DetourTransactionCommit();
+
+        queue->Release();
+    }
+}
+
 static void HookToDevice(ID3D12Device* InDevice)
 {
     if (o_CreateSampler != nullptr || InDevice == nullptr)
@@ -3525,6 +3573,8 @@ static void HookToDevice(ID3D12Device* InDevice)
 
     if (Config::Instance()->FGType.value_or_default() == FGType::OptiFG && Config::Instance()->OverlayMenu.value_or_default())
         HookCommandList(InDevice);
+
+    HookCommandQueue(InDevice);
 }
 
 static void HookToDevice(ID3D11Device* InDevice)
