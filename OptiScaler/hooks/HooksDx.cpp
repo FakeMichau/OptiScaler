@@ -795,10 +795,10 @@ static bool IsHudFixActive()
     if (HooksDx::fgSkipHudlessChecks || !HooksDx::upscaleRan)
         return false;
 
-    if (FrameGen_Dx12::fgContext == nullptr || State::Instance().currentFeature == nullptr || !FrameGen_Dx12::fgIsActive || State::Instance().FGchanged)
+    if (FrameGen_Dx12::fgContext == nullptr || State::Instance().GetLastFeature() == nullptr || !FrameGen_Dx12::fgIsActive || State::Instance().FGchanged)
         return false;
 
-    if (FrameGen_Dx12::fgTarget > State::Instance().currentFeature->FrameCount() || fgHudlessFrame == State::Instance().currentFeature->FrameCount())
+    if (FrameGen_Dx12::fgTarget > State::Instance().GetLastFeature()->FrameCount() || fgHudlessFrame == State::Instance().GetLastFeature()->FrameCount())
         return false;
 
     return true;
@@ -817,11 +817,11 @@ static bool IsFGCommandList(IUnknown* cmdList)
 
 static void GetHudless(ID3D12GraphicsCommandList* This, int fIndex)
 {
-    if ((This == nullptr || This != MenuOverlayDx::MenuCommandList()) && State::Instance().currentFeature != nullptr && !State::Instance().FGchanged &&
-        fgHudlessFrame != State::Instance().currentFeature->FrameCount() && FrameGen_Dx12::fgTarget < State::Instance().currentFeature->FrameCount() &&
+    if ((This == nullptr || This != MenuOverlayDx::MenuCommandList()) && State::Instance().GetLastFeature() != nullptr && !State::Instance().FGchanged &&
+        fgHudlessFrame != State::Instance().GetLastFeature()->FrameCount() && FrameGen_Dx12::fgTarget < State::Instance().GetLastFeature()->FrameCount() &&
         FrameGen_Dx12::fgContext != nullptr && FrameGen_Dx12::fgIsActive && HooksDx::currentSwapchain != nullptr)
     {
-        LOG_DEBUG("FrameCount: {0}, fgHudlessFrame: {1}, CommandList: {2:X}, fIndex: {3}", State::Instance().currentFeature->FrameCount(), fgHudlessFrame, (UINT64)This, fIndex);
+        LOG_DEBUG("FrameCount: {0}, fgHudlessFrame: {1}, CommandList: {2:X}, fIndex: {3}", State::Instance().GetLastFeature()->FrameCount(), fgHudlessFrame, (UINT64)This, fIndex);
 
         if (This != nullptr && Config::Instance()->FGUseMutexForSwaphain.value_or_default() && FrameGen_Dx12::ffxMutex.getOwner() != 2)
         {
@@ -832,7 +832,7 @@ static void GetHudless(ID3D12GraphicsCommandList* This, int fIndex)
         HooksDx::fgSkipHudlessChecks = true;
 
         // hudless captured for this frame
-        fgHudlessFrame = State::Instance().currentFeature->FrameCount();
+        fgHudlessFrame = State::Instance().GetLastFeature()->FrameCount();
         auto frame = fgHudlessFrame;
 
         // switch dlss targets for next depth and mv 
@@ -864,8 +864,8 @@ static void GetHudless(ID3D12GraphicsCommandList* This, int fIndex)
         }
         else
         {
-            m_FrameGenerationConfig.generationRect.width = Config::Instance()->FGRectWidth.value_or(State::Instance().currentFeature->DisplayWidth());
-            m_FrameGenerationConfig.generationRect.height = Config::Instance()->FGRectHeight.value_or(State::Instance().currentFeature->DisplayHeight());
+            m_FrameGenerationConfig.generationRect.width = Config::Instance()->FGRectWidth.value_or(State::Instance().GetLastFeature()->DisplayWidth());
+            m_FrameGenerationConfig.generationRect.height = Config::Instance()->FGRectHeight.value_or(State::Instance().GetLastFeature()->DisplayHeight());
         }
 
         m_FrameGenerationConfig.frameGenerationCallbackUserContext = &FrameGen_Dx12::fgContext;
@@ -934,8 +934,8 @@ static void GetHudless(ID3D12GraphicsCommandList* This, int fIndex)
                 }
 
                 // If fg is active but upscaling paused
-                if (!fgDispatchCalled || State::Instance().currentFeature == nullptr || State::Instance().FGchanged ||
-                    fIndex < 0 || !FrameGen_Dx12::fgIsActive || State::Instance().currentFeature->FrameCount() == 0 ||
+                if (!fgDispatchCalled || State::Instance().GetLastFeature() == nullptr || State::Instance().FGchanged ||
+                    fIndex < 0 || !FrameGen_Dx12::fgIsActive || State::Instance().GetLastFeature()->FrameCount() == 0 ||
                     FrameGen_Dx12::fgCommandList[fIndex] == nullptr)
                 {
                     LOG_WARN("Callback without hudless! frameID: {}", params->frameID);
@@ -952,7 +952,7 @@ static void GetHudless(ID3D12GraphicsCommandList* This, int fIndex)
             };
 
         m_FrameGenerationConfig.onlyPresentGenerated = State::Instance().FGonlyGenerated;
-        m_FrameGenerationConfig.frameID = State::Instance().currentFeature->FrameCount();
+        m_FrameGenerationConfig.frameID = State::Instance().GetLastFeature()->FrameCount();
         m_FrameGenerationConfig.swapChain = HooksDx::currentSwapchain;
 
         ffxReturnCode_t retCode = FfxApiProxy::D3D12_Configure()(&FrameGen_Dx12::fgContext, &m_FrameGenerationConfig.header);
@@ -973,7 +973,7 @@ static void GetHudless(ID3D12GraphicsCommandList* This, int fIndex)
             dfgPrepare.frameID = frame;
             dfgPrepare.flags = m_FrameGenerationConfig.flags;
 
-            dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(), State::Instance().currentFeature->RenderHeight() };
+            dfgPrepare.renderSize = { State::Instance().GetLastFeature()->RenderWidth(), State::Instance().GetLastFeature()->RenderHeight() };
 
             dfgPrepare.jitterOffset.x = FrameGen_Dx12::jitterX;
             dfgPrepare.jitterOffset.y = FrameGen_Dx12::jitterY;
@@ -992,7 +992,7 @@ static void GetHudless(ID3D12GraphicsCommandList* This, int fIndex)
             LOG_TRACE("frameTimeDelta: {}", ft);
 
             // If somehow context is destroyed before this point
-            if (State::Instance().currentFeature == nullptr || FrameGen_Dx12::fgContext == nullptr || !FrameGen_Dx12::fgIsActive)
+            if (State::Instance().GetLastFeature() == nullptr || FrameGen_Dx12::fgContext == nullptr || !FrameGen_Dx12::fgIsActive)
             {
                 LOG_WARN("!! State::Instance().currentFeature == nullptr || HooksDx::fgContext == nullptr");
                 return;
@@ -1032,8 +1032,8 @@ static void GetHudless(ID3D12GraphicsCommandList* This, int fIndex)
     else
     {
         LOG_ERROR("This should not happen!\nThis != MenuOverlayDx::MenuCommandList(): {} && State::Instance().currentFeature != nullptr: {} && !State::Instance().FGchanged: {} && fgHudlessFrame: {} != State::Instance().currentFeature->FrameCount(): {}, FrameGen_Dx12::fgTarget: {} < State::Instance().currentFeature->FrameCount(): {} && FrameGen_Dx12::fgContext != nullptr : {} && FrameGen_Dx12::fgIsActive: {} && HooksDx::currentSwapchain != nullptr: {}",
-                  This != MenuOverlayDx::MenuCommandList(), State::Instance().currentFeature != nullptr, !State::Instance().FGchanged,
-                  fgHudlessFrame, State::Instance().currentFeature->FrameCount(), FrameGen_Dx12::fgTarget, State::Instance().currentFeature->FrameCount(),
+                  This != MenuOverlayDx::MenuCommandList(), State::Instance().GetLastFeature() != nullptr, !State::Instance().FGchanged,
+                  fgHudlessFrame, State::Instance().GetLastFeature()->FrameCount(), FrameGen_Dx12::fgTarget, State::Instance().GetLastFeature()->FrameCount(),
                   FrameGen_Dx12::fgContext != nullptr, FrameGen_Dx12::fgIsActive, HooksDx::currentSwapchain != nullptr);
     }
 }
@@ -1046,7 +1046,7 @@ static bool CheckCapture(std::string callerName)
         std::unique_lock<std::shared_mutex> lock(counterMutex[fIndex]);
         HooksDx::fgHUDlessCaptureCounter[fIndex]++;
 
-        LOG_TRACE("{} -> frameCounter: {}, fgHUDlessCaptureCounter: {}, Limit: {}", callerName, State::Instance().currentFeature->FrameCount(), HooksDx::fgHUDlessCaptureCounter[fIndex], Config::Instance()->FGHUDLimit.value_or_default());
+        LOG_TRACE("{} -> frameCounter: {}, fgHUDlessCaptureCounter: {}, Limit: {}", callerName, State::Instance().GetLastFeature()->FrameCount(), HooksDx::fgHUDlessCaptureCounter[fIndex], Config::Instance()->FGHUDLimit.value_or_default());
 
         if (HooksDx::fgHUDlessCaptureCounter[fIndex] != Config::Instance()->FGHUDLimit.value_or_default())
             return false;
@@ -1083,9 +1083,9 @@ static void CaptureHudless(ID3D12GraphicsCommandList* cmdList, ResourceInfo* res
             ResourceBarrier(cmdList, fgHudlessBuffer[fIndex], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
             ResourceBarrier(cmdList, resource->buffer, D3D12_RESOURCE_STATE_COPY_SOURCE, state);
 #endif
-
+            auto lastHandleId = State::Instance().GetLastFeature()->Handle()->Id;
             FrameGen_Dx12::fgFormatTransfer->SetBufferState(FrameGen_Dx12::fgCommandList[fIndex], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-            FrameGen_Dx12::fgFormatTransfer->Dispatch(g_pd3dDeviceParam, FrameGen_Dx12::fgCommandList[fIndex], fgHudlessBuffer[fIndex], FrameGen_Dx12::fgFormatTransfer->Buffer());
+            FrameGen_Dx12::fgFormatTransfer->Dispatch(g_pd3dDeviceParam, FrameGen_Dx12::fgCommandList[fIndex], fgHudlessBuffer[fIndex], FrameGen_Dx12::fgFormatTransfer->Buffer(), lastHandleId);
             FrameGen_Dx12::fgFormatTransfer->SetBufferState(FrameGen_Dx12::fgCommandList[fIndex], D3D12_RESOURCE_STATE_COPY_DEST);
 
             LOG_TRACE("Using fgFormatTransfer->Buffer()");
@@ -2210,8 +2210,8 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
     // If dispatch still not called
     if (!fgDispatchCalled && Config::Instance()->FGHUDFix.value_or_default() && FrameGen_Dx12::fgIsActive &&
         Config::Instance()->FGType.value_or_default() == FGType::OptiFG && Config::Instance()->OverlayMenu.value_or_default() &&
-        Config::Instance()->FGEnabled.value_or_default() && State::Instance().currentFeature != nullptr &&
-        FrameGen_Dx12::fgTarget < State::Instance().currentFeature->FrameCount() && !State::Instance().FGchanged &&
+        Config::Instance()->FGEnabled.value_or_default() && State::Instance().GetLastFeature() != nullptr &&
+        FrameGen_Dx12::fgTarget < State::Instance().GetLastFeature()->FrameCount() && !State::Instance().FGchanged &&
         FrameGen_Dx12::fgContext != nullptr && HooksDx::currentSwapchain != nullptr)
     {
         if (HooksDx::fgHUDlessCaptureCounter[fIndex] == 9999999999999) // If not captured
@@ -2432,8 +2432,8 @@ static HRESULT Present(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags
 
         HooksDx::fgSkipHudlessChecks = false;
 
-        if (State::Instance().currentFeature != nullptr)
-            fgPresentedFrame = State::Instance().currentFeature->FrameCount();
+        if (State::Instance().GetLastFeature() != nullptr)
+            fgPresentedFrame = State::Instance().GetLastFeature()->FrameCount();
 
         if (fgStopAfterNextPresent)
         {
@@ -2465,8 +2465,8 @@ static HRESULT Present(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags
 
     HooksDx::fgSkipHudlessChecks = false;
 
-    if (State::Instance().currentFeature != nullptr)
-        fgPresentedFrame = State::Instance().currentFeature->FrameCount();
+    if (State::Instance().GetLastFeature() != nullptr)
+        fgPresentedFrame = State::Instance().GetLastFeature()->FrameCount();
 
     // release used objects
     if (cq != nullptr)

@@ -612,7 +612,7 @@ bool FSR2FeatureDx11::Evaluate(ID3D11DeviceContext* InContext, NVSDK_NGX_Paramet
     if (useSS)
     {
         LOG_DEBUG("scaling output...");
-        if (!OutputScaler->Dispatch(Device, InContext, OutputScaler->Buffer(), (ID3D11Texture2D*)paramOutput))
+        if (!OutputScaler->Dispatch(Device, InContext, OutputScaler->Buffer(), (ID3D11Texture2D*)paramOutput, Handle()->Id))
         {
             Config::Instance()->OutputScalingEnabled.set_volatile_value(false);
             State::Instance().changeBackend[Handle()->Id] = true;

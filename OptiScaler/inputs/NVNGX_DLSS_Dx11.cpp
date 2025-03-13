@@ -193,13 +193,14 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_Shutdown()
 
     for (auto const& [key, val] : Dx11Contexts)
     {
-        if (val.feature)
+        if (val.feature) {
             NVSDK_NGX_D3D11_ReleaseFeature(val.feature->Handle());
+            State::Instance().currentFeatures[val.feature->Handle()->Id] = nullptr;
+        }
     }
 
     Dx11Contexts.clear();
     D3D11Device = nullptr;
-    State::Instance().currentFeature = nullptr;
 
     DLSSFeatureDx11::Shutdown(D3D11Device);
 
@@ -503,7 +504,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_CreateFeature(ID3D11DeviceContext
 
     if (deviceContext->ModuleLoaded() && deviceContext->Init(D3D11Device, InDevCtx, InParameters))
     {
-        State::Instance().currentFeature = deviceContext;
+        State::Instance().currentFeatures[handleId] = deviceContext;
         return NVSDK_NGX_Result_Success;
     }
 
@@ -549,10 +550,10 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_ReleaseFeature(NVSDK_NGX_Handle* 
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
 
-        if (deviceContext == State::Instance().currentFeature)
+        if (deviceContext == State::Instance().currentFeatures[handleId])
         {
             deviceContext->Shutdown();
-            State::Instance().currentFeature = nullptr;
+            State::Instance().currentFeatures[handleId] = nullptr;
         }
 
         Dx11Contexts[handleId].feature.reset();
@@ -690,7 +691,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_EvaluateFeature(ID3D11DeviceConte
                 //auto it = std::find_if(Dx11Contexts.begin(), Dx11Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
                 //Dx11Contexts.erase(it);
 
-                State::Instance().currentFeature = nullptr;
+                State::Instance().currentFeatures[handleId] = nullptr;
             }
             else
             {
@@ -826,13 +827,13 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_EvaluateFeature(ID3D11DeviceConte
         }
 
         // if initial feature can't be inited
-        State::Instance().currentFeature = Dx11Contexts[handleId].feature.get();
+        State::Instance().currentFeatures[handleId] = Dx11Contexts[handleId].feature.get();
 
         return NVSDK_NGX_Result_Success;
     }
 
     deviceContext = Dx11Contexts[handleId].feature.get();
-    State::Instance().currentFeature = deviceContext;
+    State::Instance().currentFeatures[handleId] = deviceContext;
 
     if (deviceContext == nullptr)
     {

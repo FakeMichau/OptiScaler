@@ -469,7 +469,7 @@ bool FSR31FeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_
         LOG_DEBUG("scaling output...");
         OutputScaler->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
-        if (!OutputScaler->Dispatch(Device, InCommandList, OutputScaler->Buffer(), paramOutput))
+        if (!OutputScaler->Dispatch(Device, InCommandList, OutputScaler->Buffer(), paramOutput, Handle()->Id))
         {
             Config::Instance()->OutputScalingEnabled.set_volatile_value(false);
             State::Instance().changeBackend[Handle()->Id] = true;

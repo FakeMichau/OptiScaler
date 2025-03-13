@@ -607,7 +607,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_CreateFeature1(VkDevice InDevice
 
     if (deviceContext->Init(vkInstance, vkPD, InDevice, InCmdList, vkGIPA, vkGDPA, InParameters))
     {
-        State::Instance().currentFeature = deviceContext;
+        State::Instance().currentFeatures[handleId] = deviceContext;
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         evalCounter = 0;
 
@@ -674,9 +674,9 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_ReleaseFeature(NVSDK_NGX_Handle*
 
     if (auto deviceContext = VkContexts[handleId].feature.get(); deviceContext)
     {
-        if (deviceContext == State::Instance().currentFeature)
+        if (deviceContext == State::Instance().currentFeatures[handleId])
         {
-            State::Instance().currentFeature = nullptr;
+            State::Instance().currentFeatures[handleId] = nullptr;
             deviceContext->Shutdown();
         }
 
@@ -854,7 +854,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_EvaluateFeature(VkCommandBuffer 
                 //auto it = std::find_if(VkContexts.begin(), VkContexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
                 //VkContexts.erase(it);
 
-                State::Instance().currentFeature = nullptr;
+                State::Instance().currentFeatures[handleId] = nullptr;
             }
             else
             {
@@ -967,13 +967,13 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_EvaluateFeature(VkCommandBuffer 
         }
 
         // if initial feature can't be inited
-        State::Instance().currentFeature = VkContexts[handleId].feature.get();
+        State::Instance().currentFeatures[handleId] = VkContexts[handleId].feature.get();
 
         return NVSDK_NGX_Result_Success;
     }
 
     deviceContext = VkContexts[handleId].feature.get();
-    State::Instance().currentFeature = deviceContext;
+    State::Instance().currentFeatures[handleId] = deviceContext;
 
     if (!deviceContext->IsInited() && Config::Instance()->VulkanUpscaler.value_or_default() != "fsr21")
     {
@@ -1001,8 +1001,10 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_Shutdown(void)
     shutdown = true;
 
     for (auto const& [key, val] : VkContexts) {
-        if (val.feature)
+        if (val.feature) {
             NVSDK_NGX_VULKAN_ReleaseFeature(val.feature->Handle());
+            State::Instance().currentFeatures.erase(val.feature->Handle()->Id);
+        }
     }
 
     VkContexts.clear();
@@ -1010,8 +1012,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_Shutdown(void)
     vkInstance = nullptr;
     vkPD = nullptr;
     vkDevice = nullptr;
-
-    State::Instance().currentFeature = nullptr;
 
     DLSSFeatureVk::Shutdown(vkDevice);
 

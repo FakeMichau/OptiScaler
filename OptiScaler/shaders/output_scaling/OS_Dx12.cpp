@@ -125,7 +125,7 @@ void OS_Dx12::SetBufferState(ID3D12GraphicsCommandList* InCommandList, D3D12_RES
     _bufferState = InState;
 }
 
-bool OS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InResource, ID3D12Resource* OutResource)
+bool OS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InResource, ID3D12Resource* OutResource, unsigned int handleId)
 {
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InResource == nullptr || OutResource == nullptr)
         return false;
@@ -194,9 +194,9 @@ bool OS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdL
         UpscaleShaderConstants constants{};
 
         FsrEasuCon(constants.const0, constants.const1, constants.const2, constants.const3,
-                   State::Instance().currentFeature->TargetWidth(), State::Instance().currentFeature->TargetHeight(),
+                   State::Instance().currentFeatures[handleId]->TargetWidth(), State::Instance().currentFeatures[handleId]->TargetHeight(),
                    inDesc.Width, inDesc.Height,
-                   State::Instance().currentFeature->DisplayWidth(), State::Instance().currentFeature->DisplayHeight());
+                   State::Instance().currentFeatures[handleId]->DisplayWidth(), State::Instance().currentFeatures[handleId]->DisplayHeight());
 
         // Copy the updated constant buffer data to the constant buffer resource
         UINT8* pCBDataBegin;
@@ -211,10 +211,10 @@ bool OS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdL
     else
     {
         Constants constants{};
-        constants.srcWidth = State::Instance().currentFeature->TargetWidth();
-        constants.srcHeight = State::Instance().currentFeature->TargetHeight();
-        constants.destWidth = State::Instance().currentFeature->DisplayWidth(); 
-        constants.destHeight = State::Instance().currentFeature->DisplayHeight();
+        constants.srcWidth = State::Instance().currentFeatures[handleId]->TargetWidth();
+        constants.srcHeight = State::Instance().currentFeatures[handleId]->TargetHeight();
+        constants.destWidth = State::Instance().currentFeatures[handleId]->DisplayWidth();
+        constants.destHeight = State::Instance().currentFeatures[handleId]->DisplayHeight();
 
         // Copy the updated constant buffer data to the constant buffer resource
         UINT8* pCBDataBegin;
@@ -244,8 +244,8 @@ bool OS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdL
 
     //if (true || _upsample || Config::Instance()->OutputScalingUseFsr.value_or_default())
     //{
-        dispatchWidth = static_cast<UINT>((State::Instance().currentFeature->DisplayWidth() + InNumThreadsX - 1) / InNumThreadsX);
-        dispatchHeight = (State::Instance().currentFeature->DisplayHeight() + InNumThreadsY - 1) / InNumThreadsY;
+        dispatchWidth = static_cast<UINT>((State::Instance().currentFeatures[handleId]->DisplayWidth() + InNumThreadsX - 1) / InNumThreadsX);
+        dispatchHeight = (State::Instance().currentFeatures[handleId]->DisplayHeight() + InNumThreadsY - 1) / InNumThreadsY;
     //}
     //else
     //{

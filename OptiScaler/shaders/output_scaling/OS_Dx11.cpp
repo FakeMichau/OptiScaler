@@ -140,7 +140,7 @@ bool OS_Dx11::InitializeViews(ID3D11Texture2D* InResource, ID3D11Texture2D* OutR
     return true;
 }
 
-bool OS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext, ID3D11Texture2D* InResource, ID3D11Texture2D* OutResource)
+bool OS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext, ID3D11Texture2D* InResource, ID3D11Texture2D* OutResource, unsigned int handleId)
 {
     if (!_init || InDevice == nullptr || InContext == nullptr || InResource == nullptr || OutResource == nullptr)
         return false;
@@ -161,9 +161,9 @@ bool OS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext, I
         UpscaleShaderConstants constants{};
 
         FsrEasuCon(constants.const0, constants.const1, constants.const2, constants.const3,
-                   State::Instance().currentFeature->TargetWidth(), State::Instance().currentFeature->TargetHeight(),
+                   State::Instance().currentFeatures[handleId]->TargetWidth(), State::Instance().currentFeatures[handleId]->TargetHeight(),
                    inDesc.Width, inDesc.Height,
-                   State::Instance().currentFeature->DisplayWidth(), State::Instance().currentFeature->DisplayHeight());
+                   State::Instance().currentFeatures[handleId]->DisplayWidth(), State::Instance().currentFeatures[handleId]->DisplayHeight());
 
         // Copy the updated constant buffer data to the constant buffer resource
         D3D11_MAPPED_SUBRESOURCE mappedResource;
@@ -180,10 +180,10 @@ bool OS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext, I
     else
     {
         Constants constants{};
-        constants.srcWidth = State::Instance().currentFeature->TargetWidth();
-        constants.srcHeight = State::Instance().currentFeature->TargetHeight();
-        constants.destWidth = State::Instance().currentFeature->DisplayWidth(); // static_cast<uint32_t>(outDesc.Width);
-        constants.destHeight = State::Instance().currentFeature->DisplayHeight(); // outDesc.Height;
+        constants.srcWidth = State::Instance().currentFeatures[handleId]->TargetWidth();
+        constants.srcHeight = State::Instance().currentFeatures[handleId]->TargetHeight();
+        constants.destWidth = State::Instance().currentFeatures[handleId]->DisplayWidth(); // static_cast<uint32_t>(outDesc.Width);
+        constants.destHeight = State::Instance().currentFeatures[handleId]->DisplayHeight(); // outDesc.Height;
 
         D3D11_MAPPED_SUBRESOURCE mappedResource;
         auto hr = InContext->Map(_constantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &mappedResource);
@@ -209,8 +209,8 @@ bool OS_Dx11::Dispatch(ID3D11Device* InDevice, ID3D11DeviceContext* InContext, I
 
     //if (_upsample || Config::Instance()->OutputScalingUseFsr.value_or_default())
     //{
-        dispatchWidth = static_cast<UINT>((State::Instance().currentFeature->DisplayWidth() + InNumThreadsX - 1) / InNumThreadsX);
-        dispatchHeight = (State::Instance().currentFeature->DisplayHeight() + InNumThreadsY - 1) / InNumThreadsY;
+        dispatchWidth = static_cast<UINT>((State::Instance().currentFeatures[handleId]->DisplayWidth() + InNumThreadsX - 1) / InNumThreadsX);
+        dispatchHeight = (State::Instance().currentFeatures[handleId]->DisplayHeight() + InNumThreadsY - 1) / InNumThreadsY;
     //}
     //else
     //{

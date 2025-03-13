@@ -4,7 +4,7 @@
 #include <upscalers/IFeature_Dx12.h>
 
 PFN_ExecuteCommandLists CommandQueue::o_ExecuteCommandLists = nullptr;
-std::unordered_map<ID3D12GraphicsCommandList*, ID3D12CommandQueue*> CommandQueue::commandListToQueueMap{};
+ankerl::unordered_dense::map<ID3D12GraphicsCommandList*, ID3D12CommandQueue*> CommandQueue::commandListToQueueMap{};
 
 ID3D12CommandQueue* CommandQueue::GetLastKnownCommandQueue(ID3D12GraphicsCommandList* commandList) {
     return commandListToQueueMap[commandList];
@@ -21,8 +21,13 @@ void CommandQueue::hkExecuteCommandLists(ID3D12CommandQueue* This, UINT numComma
         commandListToQueueMap[cmdList] = This;
 
         for (auto& pair : State::Instance().handleIdToCommandList) {
-            if (pair.second == cmdList && State::Instance().currentFeature) {
-                pair.first->SignalCommandQueue(This);
+            if (pair.second == cmdList) {
+                IFeature* feature = State::Instance().currentFeatures[pair.first];
+                IFeature_Dx12* dx12Feature = dynamic_cast<IFeature_Dx12*>(feature);
+                if (dx12Feature)
+                    dx12Feature->SignalCommandQueue(This);
+                else
+                    LOG_WARN("Upcast to feature dx12 has failed");
             }
         }
     }

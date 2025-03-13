@@ -127,7 +127,7 @@ void DS_Dx12::SetBufferState(ID3D12GraphicsCommandList* InCommandList, D3D12_RES
     _bufferState = InState;
 }
 
-bool DS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InResource, ID3D12Resource* OutResource)
+bool DS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InResource, ID3D12Resource* OutResource, unsigned int handleId)
 {
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InResource == nullptr || OutResource == nullptr)
         return false;
@@ -228,15 +228,15 @@ bool DS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdL
     UINT dispatchWidth = 0;
     UINT dispatchHeight = 0;
 
-    if ((State::Instance().currentFeature->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_MVLowRes) == 0)
+    if ((State::Instance().currentFeatures[handleId]->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_MVLowRes) == 0)
     {
-        dispatchWidth = static_cast<UINT>((State::Instance().currentFeature->DisplayWidth() + InNumThreadsX - 1) / InNumThreadsX);
-        dispatchHeight = (State::Instance().currentFeature->DisplayHeight() + InNumThreadsY - 1) / InNumThreadsY;
+        dispatchWidth = static_cast<UINT>((State::Instance().currentFeatures[handleId]->DisplayWidth() + InNumThreadsX - 1) / InNumThreadsX);
+        dispatchHeight = (State::Instance().currentFeatures[handleId]->DisplayHeight() + InNumThreadsY - 1) / InNumThreadsY;
     }
     else
     {
-        dispatchWidth = static_cast<UINT>((State::Instance().currentFeature->RenderWidth() + InNumThreadsX - 1) / InNumThreadsX);
-        dispatchHeight = (State::Instance().currentFeature->RenderHeight() + InNumThreadsY - 1) / InNumThreadsY;
+        dispatchWidth = static_cast<UINT>((State::Instance().currentFeatures[handleId]->RenderWidth() + InNumThreadsX - 1) / InNumThreadsX);
+        dispatchHeight = (State::Instance().currentFeatures[handleId]->RenderHeight() + InNumThreadsY - 1) / InNumThreadsY;
     }
 
     InCmdList->Dispatch(dispatchWidth, dispatchHeight, 1);

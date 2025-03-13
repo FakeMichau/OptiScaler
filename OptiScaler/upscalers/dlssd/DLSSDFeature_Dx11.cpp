@@ -220,7 +220,7 @@ bool DLSSDFeatureDx11::Evaluate(ID3D11DeviceContext* InDeviceContext, NVSDK_NGX_
         {
             LOG_DEBUG("downscaling output...");
 
-            if (!OutputScaler->Dispatch(Device, InDeviceContext, OutputScaler->Buffer(), (ID3D11Texture2D*)paramOutput))
+            if (!OutputScaler->Dispatch(Device, InDeviceContext, OutputScaler->Buffer(), (ID3D11Texture2D*)paramOutput, Handle()->Id))
             {
                 Config::Instance()->OutputScalingEnabled.set_volatile_value(false);
                 State::Instance().changeBackend[Handle()->Id] = true;

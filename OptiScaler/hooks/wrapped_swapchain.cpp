@@ -140,7 +140,7 @@ HRESULT WrappedIDXGISwapChain4::ResizeBuffers(UINT BufferCount, UINT Width, UINT
         State::Instance().FGresetCapturedResources = true;
         State::Instance().FGonlyUseCapturedResources = false;
 
-        if (State::Instance().currentFeature != nullptr)
+        if (State::Instance().GetLastFeature() != nullptr)
             State::Instance().FGchanged = true;
     }
 
@@ -152,7 +152,7 @@ HRESULT WrappedIDXGISwapChain4::ResizeBuffers(UINT BufferCount, UINT Width, UINT
     LOG_DEBUG("BufferCount: {0}, Width: {1}, Height: {2}, NewFormat: {3}, SwapChainFlags: {4:X}", BufferCount, Width, Height, (UINT)NewFormat, SwapChainFlags);
 
     result = m_pReal->ResizeBuffers(BufferCount, Width, Height, NewFormat, SwapChainFlags);
-    if (result == S_OK && State::Instance().currentFeature == nullptr)
+    if (result == S_OK && State::Instance().GetLastFeature() == nullptr)
     {
         State::Instance().screenWidth = Width;
         State::Instance().screenHeight = Height;
@@ -271,7 +271,7 @@ HRESULT WrappedIDXGISwapChain4::ResizeBuffers1(UINT BufferCount, UINT Width, UIN
         State::Instance().FGresetCapturedResources = true;
         State::Instance().FGonlyUseCapturedResources = false;
 
-        if (State::Instance().currentFeature != nullptr)
+        if (State::Instance().GetLastFeature() != nullptr)
             State::Instance().FGchanged = true;
     }
 
@@ -283,7 +283,7 @@ HRESULT WrappedIDXGISwapChain4::ResizeBuffers1(UINT BufferCount, UINT Width, UIN
     LOG_DEBUG("BufferCount: {0}, Width: {1}, Height: {2}, NewFormat: {3}, SwapChainFlags: {4:X}, pCreationNodeMask: {5}", BufferCount, Width, Height, (UINT)Format, SwapChainFlags, *pCreationNodeMask);
 
     result = m_pReal3->ResizeBuffers1(BufferCount, Width, Height, Format, SwapChainFlags, pCreationNodeMask, ppPresentQueue);
-    if (result == S_OK && State::Instance().currentFeature == nullptr)
+    if (result == S_OK && State::Instance().GetLastFeature() == nullptr)
     {
         State::Instance().screenWidth = Width;
         State::Instance().screenHeight = Height;
@@ -398,7 +398,7 @@ HRESULT WrappedIDXGISwapChain4::SetFullscreenState(BOOL Fullscreen, IDXGIOutput*
             State::Instance().FGresetCapturedResources = true;
             State::Instance().FGonlyUseCapturedResources = false;
 
-            if (State::Instance().currentFeature != nullptr)
+            if (State::Instance().GetLastFeature() != nullptr)
                 State::Instance().FGchanged = true;
         }
 

@@ -40,6 +40,15 @@ public:
         return instance;
     }
 
+	// Not ideal because there can be differences between features
+	// but should work fine for most cases
+	IFeature* GetLastFeature() {
+		IFeature* currentFeature = nullptr;
+		for (auto& feature : State::Instance().currentFeatures)
+			currentFeature = feature.second;
+		return currentFeature;
+	}
+
 	// TODO: remove entries on release
 	std::unordered_map<unsigned int, ID3D12GraphicsCommandList*> handleIdToCommandList{};
 
@@ -161,8 +170,7 @@ public:
 	bool fsrHooks = false;
 
 
-	// TODO: make it handleid-aware
-	IFeature* currentFeature = nullptr;
+	ankerl::unordered_dense::map<unsigned int, IFeature*> currentFeatures{};
 
 	std::vector<ID3D12Device*> d3d12Devices;
 	std::vector<ID3D11Device*> d3d11Devices;

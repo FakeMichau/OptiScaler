@@ -430,14 +430,14 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_Shutdown(void)
     inited = false;
 
     for (auto const& [key, val] : Dx12Contexts) {
-        if (val.feature)
+        if (val.feature) {
             NVSDK_NGX_D3D12_ReleaseFeature(val.feature->Handle());
+            State::Instance().currentFeatures[val.feature->Handle()->Id] = nullptr;
+        }
     }
 
     Dx12Contexts.clear();
     D3D12Device = nullptr;
-
-    State::Instance().currentFeature = nullptr;
 
     // Unhooking and cleaning stuff causing issues during shutdown. 
     // Disabled for now to check if it cause any issues
@@ -804,7 +804,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_CreateFeature(ID3D12GraphicsComma
 
     if (deviceContext->Init(D3D12Device, InCmdList, InParameters))
     {
-        State::Instance().currentFeature = deviceContext;
+        State::Instance().currentFeatures[handleId] = deviceContext;
         evalCounter = 0;
         FrameGen_Dx12::fgTarget = 10;
     }
@@ -890,9 +890,9 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_ReleaseFeature(NVSDK_NGX_Handle* 
 
     if (auto deviceContext = Dx12Contexts[handleId].feature.get(); deviceContext != nullptr)
     {
-        if (deviceContext == State::Instance().currentFeature)
+        if (deviceContext == State::Instance().currentFeatures[handleId])
         {
-            State::Instance().currentFeature = nullptr;
+            State::Instance().currentFeatures[handleId] = nullptr;
             deviceContext->Shutdown();
         }
 
@@ -1229,7 +1229,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                 //auto it = std::find_if(Dx12Contexts.begin(), Dx12Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
                 //Dx12Contexts.erase(it);
 
-                State::Instance().currentFeature = nullptr;
+                State::Instance().currentFeatures[handleId] = nullptr;
 
                 contextRendering = false;
             }
@@ -1364,7 +1364,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         }
 
         // if initial feature can't be inited
-        State::Instance().currentFeature = Dx12Contexts[handleId].feature.get();
+        State::Instance().currentFeatures[handleId] = Dx12Contexts[handleId].feature.get();
         FrameGen_Dx12::fgTarget = 20;
 
         //return NVSDK_NGX_Result_Success;
@@ -1386,7 +1386,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         return NVSDK_NGX_Result_Success;
     }
 
-    State::Instance().currentFeature = deviceContext;
+    State::Instance().currentFeatures[handleId] = deviceContext;
 
     // Root signature restore
     if (deviceContext->Name() != "DLSSD" && (Config::Instance()->RestoreComputeSignature.value_or_default() || Config::Instance()->RestoreGraphicSignature.value_or_default()))
@@ -1490,7 +1490,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         if (InParameters->Get(NVSDK_NGX_Parameter_Reset, &FrameGen_Dx12::reset) != NVSDK_NGX_Result_Success)
             FrameGen_Dx12::reset = 0;
     }
-
+    
     // FG Prepare
     ID3D12Resource* output;
     InParameters->Get(NVSDK_NGX_Parameter_Output, &output);
@@ -1572,7 +1572,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
             {
                 DepthScale->SetBufferState(InCmdList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-                if (DepthScale->Dispatch(D3D12Device, InCmdList, paramDepth, DepthScale->Buffer()))
+                if (DepthScale->Dispatch(D3D12Device, InCmdList, paramDepth, DepthScale->Buffer(), handleId))
                 {
                     DepthScale->SetBufferState(InCmdList, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
                     FrameGen_Dx12::paramDepth[frameIndex] = DepthScale->Buffer();
@@ -1737,9 +1737,9 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                         }
 
                         // If fg is active but upscaling paused
-                        if (State::Instance().currentFeature == nullptr || !FrameGen_Dx12::fgIsActive ||
-                            State::Instance().FGchanged || fgLastFGFrame == State::Instance().currentFeature->FrameCount() ||
-                            State::Instance().currentFeature->FrameCount() == 0)
+                        if (State::Instance().GetLastFeature() == nullptr || !FrameGen_Dx12::fgIsActive ||
+                            State::Instance().FGchanged || fgLastFGFrame == State::Instance().GetLastFeature()->FrameCount() ||
+                            State::Instance().GetLastFeature()->FrameCount() == 0)
                         {
                             LOG_WARN("(FG) Callback without active FG! fIndex:{}", fIndex);
 
@@ -1753,8 +1753,8 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                             //return FFX_API_RETURN_OK;
                         }
 
-                        if (State::Instance().currentFeature != nullptr)
-                            fgLastFGFrame = State::Instance().currentFeature->FrameCount();
+                        if (State::Instance().GetLastFeature() != nullptr)
+                            fgLastFGFrame = State::Instance().GetLastFeature()->FrameCount();
 
                         auto dispatchResult = FfxApiProxy::D3D12_Dispatch()(reinterpret_cast<ffxContext*>(pUserCtx), &params->header);
                         LOG_DEBUG("(FG) D3D12_Dispatch result: {}, fIndex: {}", (UINT)dispatchResult, fIndex);
