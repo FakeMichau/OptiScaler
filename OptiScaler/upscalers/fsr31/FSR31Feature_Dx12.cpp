@@ -30,6 +30,8 @@ bool FSR31FeatureDx12::Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* I
 
     Device = InDevice;
 
+    Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&uninitFence));
+
     if (InitFSR3(InParameters))
     {
         if (!Config::Instance()->OverlayMenu.value_or_default() && (Imgui == nullptr || Imgui.get() == nullptr))

@@ -23,6 +23,7 @@
 #include "detours/detours.h"
 #include <ffx_framegeneration.h>
 #include <ankerl/unordered_dense.h>
+#include <hooks/CommandQueue.h>
 
 // Use a dedicated Queue + CommandList for FG without hudfix
 // Looks like causing stutter/sync issues
@@ -898,6 +899,8 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_ReleaseFeature(NVSDK_NGX_Handle* 
         Dx12Contexts[handleId].feature.reset();
         auto it = std::find_if(Dx12Contexts.begin(), Dx12Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
         Dx12Contexts.erase(it);
+
+        State::Instance().handleIdToCommandList.erase(handleId);
     }
     else
     {
@@ -1204,17 +1207,22 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                 Dx12Contexts[handleId].createParams->Set(NVSDK_NGX_Parameter_OutHeight, dc->DisplayHeight());
                 Dx12Contexts[handleId].createParams->Set(NVSDK_NGX_Parameter_PerfQualityValue, dc->PerfQualityValue());
 
-                dc = nullptr;
+                static std::vector<unsigned int> inProgressHandles{};
 
-                if (State::Instance().gameQuirk = SplitFiction) {
-                    LOG_DEBUG("sleeping before reset of current feature for 100ms (Split Fiction)");
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
-                else 
-                {
-                    LOG_DEBUG("sleeping before reset of current feature for 1000ms");
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                }
+                //if (State::Instance().gameQuirk == SplitFiction) {
+                //    LOG_DEBUG("sleeping before reset of current feature for 100ms (Split Fiction)");
+                //    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                //}
+                //else 
+                //{
+                //    LOG_DEBUG("sleeping before reset of current feature for 1000ms");
+                //    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                //}
+
+                LOG_DEBUG("Last known command queue: {:X} for command list: {:X}", (uint64_t)CommandQueue::GetLastKnownCommandQueue(InCmdList), (uint64_t)InCmdList);
+                dc->WaitForCommandQueue();
+
+                dc = nullptr;
 
                 Dx12Contexts[handleId].feature.reset();
                 Dx12Contexts[handleId].feature = nullptr;
@@ -1624,6 +1632,9 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
 
     // Run upscaler
     auto evalResult = deviceContext->Evaluate(InCmdList, InParameters);
+
+    State::Instance().handleIdToCommandList[handleId] = InCmdList;
+    //deviceContext->SignalCommandQueue(CommandQueue::GetLastKnownCommandQueue(InCmdList));
 
     // Record the second timestamp 
     if (!State::Instance().isWorkingAsNvngx)

@@ -18,11 +18,18 @@ protected:
 	std::unique_ptr<RCAS_Dx12> RCAS = nullptr;
 	std::unique_ptr<Bias_Dx12> Bias = nullptr;
 
+	ID3D12Fence* uninitFence = nullptr;
+	HANDLE uninitFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+	UINT64 uninitFenceValue = 1;
+
 	void ResourceBarrier(ID3D12GraphicsCommandList* InCommandList, ID3D12Resource* InResource, D3D12_RESOURCE_STATES InBeforeState, D3D12_RESOURCE_STATES InAfterState) const;
 
 public:
 	virtual bool Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters) = 0;
 	virtual bool Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters) = 0;
+
+	HRESULT SignalCommandQueue(ID3D12CommandQueue* commandQueue);
+	void WaitForCommandQueue();
 
 	IFeature_Dx12(unsigned int InHandleId, NVSDK_NGX_Parameter* InParameters);
 

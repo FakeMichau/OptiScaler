@@ -14,6 +14,21 @@ void IFeature_Dx12::ResourceBarrier(ID3D12GraphicsCommandList* InCommandList, ID
 	InCommandList->ResourceBarrier(1, &barrier);
 }
 
+HRESULT IFeature_Dx12::SignalCommandQueue(ID3D12CommandQueue* commandQueue)
+{
+	return commandQueue->Signal(uninitFence, ++uninitFenceValue);
+}
+
+void IFeature_Dx12::WaitForCommandQueue()
+{
+	auto completed = uninitFence->GetCompletedValue();
+
+	if (completed < uninitFenceValue) {
+		uninitFence->SetEventOnCompletion(uninitFenceValue, uninitFenceEvent);
+		WaitForSingleObject(uninitFenceEvent, 2000);
+	}
+}
+
 IFeature_Dx12::IFeature_Dx12(unsigned int InHandleId, NVSDK_NGX_Parameter* InParameters)
 {
 }

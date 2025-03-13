@@ -2,6 +2,7 @@
 #include "pch.h"
 
 #include "upscalers/IFeature.h"
+#include "upscalers/IFeature_Dx12.h"
 
 #include <deque>
 #include <vulkan/vulkan.h>
@@ -38,6 +39,9 @@ public:
         static State instance;
         return instance;
     }
+
+	// TODO: remove entries on release
+	std::unordered_map<unsigned int, ID3D12GraphicsCommandList*> handleIdToCommandList{};
 
 	// Init flags
 	// Used per feature
@@ -156,6 +160,8 @@ public:
 	bool libxessExists = false;
 	bool fsrHooks = false;
 
+
+	// TODO: make it handleid-aware
 	IFeature* currentFeature = nullptr;
 
 	std::vector<ID3D12Device*> d3d12Devices;

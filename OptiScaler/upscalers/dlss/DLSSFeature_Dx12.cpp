@@ -17,6 +17,8 @@ bool DLSSFeatureDx12::Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* In
 
 	Device = InDevice;
 
+	Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&uninitFence));
+
 	do
 	{
 		if (!_dlssInited)
