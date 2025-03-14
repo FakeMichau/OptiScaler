@@ -19,13 +19,13 @@ HRESULT IFeature_Dx12::SignalCommandQueue(ID3D12CommandQueue* commandQueue)
 	return commandQueue->Signal(uninitFence, ++uninitFenceValue);
 }
 
-void IFeature_Dx12::WaitForCommandQueue()
+void IFeature_Dx12::WaitForCommandQueue(unsigned int timeoutMs)
 {
 	auto completed = uninitFence->GetCompletedValue();
 
 	if (completed < uninitFenceValue) {
 		uninitFence->SetEventOnCompletion(uninitFenceValue, uninitFenceEvent);
-		WaitForSingleObject(uninitFenceEvent, 2000);
+		WaitForSingleObject(uninitFenceEvent, timeoutMs);
 	}
 }
 
@@ -39,6 +39,8 @@ void IFeature_Dx12::Shutdown()
 
 IFeature_Dx12::~IFeature_Dx12()
 {
+	State::Instance().currentFeatures.erase(Handle()->Id);
+
 	if (Device)
 	{
 		ID3D12Fence* d3d12Fence = nullptr;

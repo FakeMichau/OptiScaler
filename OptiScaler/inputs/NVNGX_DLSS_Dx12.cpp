@@ -892,7 +892,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_ReleaseFeature(NVSDK_NGX_Handle* 
     {
         if (deviceContext == State::Instance().currentFeatures[handleId])
         {
-            State::Instance().currentFeatures[handleId] = nullptr;
+            State::Instance().currentFeatures.erase(handleId);
             deviceContext->Shutdown();
         }
 
@@ -1220,7 +1220,8 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                 //}
 
                 LOG_DEBUG("Last known command queue: {:X} for command list: {:X}", (uint64_t)CommandQueue::GetLastKnownCommandQueue(InCmdList), (uint64_t)InCmdList);
-                dc->WaitForCommandQueue();
+                               
+                dc->WaitForCommandQueue(1000);
 
                 dc = nullptr;
 
@@ -1229,7 +1230,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                 //auto it = std::find_if(Dx12Contexts.begin(), Dx12Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
                 //Dx12Contexts.erase(it);
 
-                State::Instance().currentFeatures[handleId] = nullptr;
+                State::Instance().currentFeatures.erase(handleId);
 
                 contextRendering = false;
             }

@@ -676,7 +676,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_ReleaseFeature(NVSDK_NGX_Handle*
     {
         if (deviceContext == State::Instance().currentFeatures[handleId])
         {
-            State::Instance().currentFeatures[handleId] = nullptr;
+            State::Instance().currentFeatures.erase(handleId);
             deviceContext->Shutdown();
         }
 
@@ -854,7 +854,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_EvaluateFeature(VkCommandBuffer 
                 //auto it = std::find_if(VkContexts.begin(), VkContexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
                 //VkContexts.erase(it);
 
-                State::Instance().currentFeatures[handleId] = nullptr;
+                State::Instance().currentFeatures.erase(handleId);
             }
             else
             {

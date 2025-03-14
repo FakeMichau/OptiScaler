@@ -553,7 +553,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_ReleaseFeature(NVSDK_NGX_Handle* 
         if (deviceContext == State::Instance().currentFeatures[handleId])
         {
             deviceContext->Shutdown();
-            State::Instance().currentFeatures[handleId] = nullptr;
+            State::Instance().currentFeatures.erase(handleId);
         }
 
         Dx11Contexts[handleId].feature.reset();
@@ -691,7 +691,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_EvaluateFeature(ID3D11DeviceConte
                 //auto it = std::find_if(Dx11Contexts.begin(), Dx11Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
                 //Dx11Contexts.erase(it);
 
-                State::Instance().currentFeatures[handleId] = nullptr;
+                State::Instance().currentFeatures.erase(handleId);
             }
             else
             {

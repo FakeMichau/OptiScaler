@@ -27,7 +27,7 @@ void CommandQueue::hkExecuteCommandLists(ID3D12CommandQueue* This, UINT numComma
                 if (dx12Feature)
                     dx12Feature->SignalCommandQueue(This);
                 else
-                    LOG_WARN("Upcast to feature dx12 has failed");
+                    LOG_WARN("Downcast to feature dx12 has failed");
             }
         }
     }

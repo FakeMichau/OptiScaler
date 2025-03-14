@@ -29,7 +29,7 @@ public:
 	virtual bool Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters) = 0;
 
 	HRESULT SignalCommandQueue(ID3D12CommandQueue* commandQueue);
-	void WaitForCommandQueue();
+	void WaitForCommandQueue(unsigned int timeoutMs);
 
 	IFeature_Dx12(unsigned int InHandleId, NVSDK_NGX_Parameter* InParameters);
 
