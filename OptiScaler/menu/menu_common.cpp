@@ -1185,10 +1185,8 @@ bool MenuCommon::RenderMenu()
             CopyMemory(style.Colors, styleold.Colors, sizeof(style.Colors)); // Restore colors		
         }
 
-        IFeature* currentFeature = nullptr;
-
-        // Make the menu be tied to one feature
-        currentFeature = State::Instance().GetLastFeature();
+        // Makes the menu tied to one feature
+        IFeature* currentFeature = State::Instance().GetLastFeature();
 
         auto size = ImVec2{ 0.0f, 0.0f };
         ImGui::SetNextWindowSize(size);

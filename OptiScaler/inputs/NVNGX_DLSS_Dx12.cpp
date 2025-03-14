@@ -432,7 +432,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_Shutdown(void)
     for (auto const& [key, val] : Dx12Contexts) {
         if (val.feature) {
             NVSDK_NGX_D3D12_ReleaseFeature(val.feature->Handle());
-            State::Instance().currentFeatures[val.feature->Handle()->Id] = nullptr;
+            State::Instance().currentFeatures.erase(val.feature->Handle()->Id);
         }
     }
 
@@ -1207,20 +1207,9 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                 Dx12Contexts[handleId].createParams->Set(NVSDK_NGX_Parameter_OutHeight, dc->DisplayHeight());
                 Dx12Contexts[handleId].createParams->Set(NVSDK_NGX_Parameter_PerfQualityValue, dc->PerfQualityValue());
 
-                static std::vector<unsigned int> inProgressHandles{};
-
-                //if (State::Instance().gameQuirk == SplitFiction) {
-                //    LOG_DEBUG("sleeping before reset of current feature for 100ms (Split Fiction)");
-                //    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                //}
-                //else 
-                //{
-                //    LOG_DEBUG("sleeping before reset of current feature for 1000ms");
-                //    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                //}
-
                 LOG_DEBUG("Last known command queue: {:X} for command list: {:X}", (uint64_t)CommandQueue::GetLastKnownCommandQueue(InCmdList), (uint64_t)InCmdList);
-                               
+                
+                
                 dc->WaitForCommandQueue(1000);
 
                 dc = nullptr;

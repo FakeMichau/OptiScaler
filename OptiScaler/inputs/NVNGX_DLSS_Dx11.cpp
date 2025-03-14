@@ -195,7 +195,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_Shutdown()
     {
         if (val.feature) {
             NVSDK_NGX_D3D11_ReleaseFeature(val.feature->Handle());
-            State::Instance().currentFeatures[val.feature->Handle()->Id] = nullptr;
+            State::Instance().currentFeatures.erase(val.feature->Handle()->Id);
         }
     }
 
