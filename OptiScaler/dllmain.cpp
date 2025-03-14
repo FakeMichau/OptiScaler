@@ -13,13 +13,14 @@
 #include "proxies/Streamline_Proxy.h"
 #include "inputs/FSR2_Dx12.h"
 #include "inputs/FSR3_Dx12.h"
+#include "inputs/FfxApiExe_Dx12.h"
 
 #include "hooks/HooksDx.h"
 #include "hooks/HooksVk.h"
 
 #include <vulkan/vulkan_core.h>
 
-HMODULE mod_amdxc64 = nullptr;
+static HMODULE mod_amdxc64 = nullptr;
 
 // Enables hooking of GetModuleHandle
 // which might create issues, not tested very well
@@ -63,6 +64,7 @@ static PFN_LoadLibraryW o_LoadLibraryW = nullptr;
 static PFN_LoadLibraryExA o_LoadLibraryExA = nullptr;
 static PFN_LoadLibraryExW o_LoadLibraryExW = nullptr;
 static PFN_GetProcAddress o_GetProcAddress = nullptr;
+static PFN_GetProcAddress o_GetProcAddressKernelBase = nullptr;
 static PFN_GetModuleHandleA o_GetModuleHandleA = nullptr;
 static PFN_GetModuleHandleW o_GetModuleHandleW = nullptr;
 static PFN_GetModuleHandleExA o_GetModuleHandleExA = nullptr;
@@ -720,6 +722,108 @@ static HMODULE LoadNvngxDlss(std::wstring originalPath)
 
 #pragma region Load & nvngxDlss Library hooks
 
+static void CheckForGPU()
+{
+    if (Config::Instance()->Fsr4Update.has_value())
+        return;
+
+    bool loaded = false;
+
+    HMODULE dxgiModule = nullptr;
+
+    if (o_LoadLibraryExW != nullptr)
+    {
+        dxgiModule = o_LoadLibraryExW(L"dxgi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        loaded = dxgiModule != nullptr;
+    }
+    else
+    {
+        dxgiModule = LoadLibraryExW(L"dxgi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        loaded = dxgiModule != nullptr;
+    }
+
+    if (dxgiModule == nullptr)
+        return;
+
+    auto createFactory = (PFN_CREATE_DXGI_FACTORY)GetProcAddress(dxgiModule, "CreateDXGIFactory");
+    if (createFactory == nullptr)
+    {
+        if (loaded)
+            FreeLibrary(dxgiModule);
+
+        return;
+    }
+
+    IDXGIFactory* factory;
+    HRESULT result = createFactory(__uuidof(factory), &factory);
+
+    if (result != S_OK)
+    {
+        LOG_ERROR("Can't create DXGIFactory error: {:X}", (UINT)result);
+
+        if (loaded)
+            FreeLibrary(dxgiModule);
+
+        return;
+    }
+
+    UINT adapterIndex = 0;
+    DXGI_ADAPTER_DESC adapterDesc{};
+    IDXGIAdapter* adapter;
+
+    while (factory->EnumAdapters(adapterIndex, &adapter) == S_OK)
+    {
+        if (adapter == nullptr)
+        {
+            adapterIndex++;
+            continue;
+        }
+
+        State::Instance().skipSpoofing = true;
+        result = adapter->GetDesc(&adapterDesc);
+        State::Instance().skipSpoofing = false;
+
+        if (result == S_OK && adapterDesc.VendorId != 0x00001414)
+        {
+            std::wstring szName(adapterDesc.Description);
+            std::string descStr = std::format("Adapter: {}, VRAM: {} MB", wstring_to_string(szName), adapterDesc.DedicatedVideoMemory / (1024 * 1024));
+            LOG_INFO("{}", descStr);
+
+            // If GPU is AMD
+            if (adapterDesc.VendorId == 0x1002)
+            {
+                // If GPU Name contains 90XX always set it to true
+                if (szName.find(L" 90") != std::wstring::npos || szName.find(L" GFX12") != std::wstring::npos)
+                    Config::Instance()->Fsr4Update = true;
+            }
+        }
+        else
+        {
+            LOG_DEBUG("Can't get description of adapter: {}", adapterIndex);
+        }
+
+        adapter->Release();
+        adapter = nullptr;
+        adapterIndex++;
+    }
+
+    factory->Release();
+    factory = nullptr;
+
+    if (loaded)
+    {
+        if (o_FreeLibrary != nullptr)
+            o_FreeLibrary(dxgiModule);
+        else
+            FreeLibrary(dxgiModule);
+    }
+
+    if (!Config::Instance()->Fsr4Update.has_value())
+        Config::Instance()->Fsr4Update = false;
+
+    LOG_INFO("Fsr4Update: {}", Config::Instance()->Fsr4Update.value_or_default());
+}
+
 // For FSR4 Upgrade
 HRESULT STDMETHODCALLTYPE hkAmdExtD3DCreateInterface(IUnknown* pOuter, REFIID riid, void** ppvObject)
 {
@@ -741,17 +845,44 @@ HRESULT STDMETHODCALLTYPE hkAmdExtD3DCreateInterface(IUnknown* pOuter, REFIID ri
     return E_NOINTERFACE;
 }
 
+static UINT customD3D12SDKVersion = 615;
+
+static const char8_t* customD3D12SDKPath = u8".\\D3D12_Optiscaler\\"; //Hardcoded for now
+
 static FARPROC hkGetProcAddress(HMODULE hModule, LPCSTR lpProcName)
 {
     if (hModule == dllModule && lpProcName != nullptr)
         LOG_DEBUG("Trying to get process address of {0}", lpProcName);
 
     // For FSR4 Upgrade
-    if (Config::Instance()->Fsr4Update.value_or_default() && hModule == mod_amdxc64 && o_AmdExtD3DCreateInterface != nullptr &&
-        lpProcName != nullptr && strcmp(lpProcName, "AmdExtD3DCreateInterface") == 0)
+    if (hModule == mod_amdxc64 && o_AmdExtD3DCreateInterface != nullptr && lpProcName != nullptr && strcmp(lpProcName, "AmdExtD3DCreateInterface") == 0)
     {
-        // Return custom method for upgrade
-        return (FARPROC)hkAmdExtD3DCreateInterface;
+        CheckForGPU();
+
+        // Return custom method for upgrade for RDNA4
+        if (Config::Instance()->Fsr4Update.value_or_default())
+            return (FARPROC)hkAmdExtD3DCreateInterface;
+    }
+
+    // For Agility SDK Upgrade
+    if (Config::Instance()->FsrAgilitySDKUpgrade.value_or_default())
+    {
+        HMODULE mod_mainExe;
+        GetModuleHandleEx(2u, 0i64, &mod_mainExe);
+        if (hModule == mod_mainExe && lpProcName != nullptr)
+        {
+            if (strcmp(lpProcName, "D3D12SDKVersion") == 0)
+            {
+                LOG_INFO("D3D12SDKVersion call, returning this version!"); 
+                return (FARPROC)&customD3D12SDKVersion;
+            }
+
+            if (strcmp(lpProcName, "D3D12SDKPath") == 0)
+            {
+                LOG_INFO("D3D12SDKPath call, returning this path!");
+                return (FARPROC)&customD3D12SDKPath;
+            }
+        }
     }
 
     if (State::Instance().isRunningOnLinux && lpProcName != nullptr && hModule == GetModuleHandle(L"gdi32.dll") && lstrcmpA(lpProcName, "D3DKMTEnumAdapters2") == 0)
@@ -1660,6 +1791,12 @@ static void DetachHooks()
             o_GetProcAddress = nullptr;
         }
 
+		if (o_GetProcAddressKernelBase)
+		{
+			DetourDetach(&(PVOID&)o_GetProcAddressKernelBase, hkGetProcAddress);
+			o_GetProcAddressKernelBase = nullptr;
+		}
+
         if (o_vkGetPhysicalDeviceProperties)
         {
             DetourDetach(&(PVOID&)o_vkGetPhysicalDeviceProperties, hkvkGetPhysicalDeviceProperties);
@@ -1750,6 +1887,7 @@ static void AttachHooks()
         o_GetModuleHandleExW = reinterpret_cast<PFN_GetModuleHandleExW>(DetourFindFunction("kernel32.dll", "GetModuleHandleExW"));
 #endif
         o_GetProcAddress = reinterpret_cast<PFN_GetProcAddress>(DetourFindFunction("kernel32.dll", "GetProcAddress"));
+		o_GetProcAddressKernelBase = reinterpret_cast<PFN_GetProcAddress>(DetourFindFunction("kernelbase.dll", "GetProcAddress"));
 
         if (o_LoadLibraryA != nullptr || o_LoadLibraryW != nullptr || o_LoadLibraryExA != nullptr || o_LoadLibraryExW != nullptr)
         {
@@ -1791,6 +1929,9 @@ static void AttachHooks()
 
             if (o_GetProcAddress)
                 DetourAttach(&(PVOID&)o_GetProcAddress, hkGetProcAddress);
+
+			if (o_GetProcAddressKernelBase)
+				DetourAttach(&(PVOID&)o_GetProcAddressKernelBase, hkGetProcAddress);
 
             DetourTransactionCommit();
         }
@@ -2213,6 +2354,10 @@ static void CheckWorkingMode()
             // Vulkan
             HMODULE vulkanModule = nullptr;
             vulkanModule = GetModuleHandle(L"vulkan-1.dll");
+
+            if(State::Instance().isRunningOnDXVK || State::Instance().isRunningOnLinux)
+                vulkanModule = LoadLibrary(L"vulkan-1.dll");
+
             if (vulkanModule != nullptr)
             {
                 LOG_DEBUG("vulkan-1.dll already in memory");
@@ -2331,15 +2476,12 @@ static void CheckWorkingMode()
             }
 
             // For FSR4 Upgrade
-            if (Config::Instance()->Fsr4Update.value_or_default())
-            {
-                mod_amdxc64 = GetModuleHandle(L"amdxc64.dll");
-                if (mod_amdxc64 == nullptr)
-                    mod_amdxc64 = LoadLibrary(L"amdxc64.dll");
+            mod_amdxc64 = GetModuleHandle(L"amdxc64.dll");
+            if (mod_amdxc64 == nullptr)
+                mod_amdxc64 = LoadLibrary(L"amdxc64.dll");
 
-                if (mod_amdxc64 != nullptr)
-                    o_AmdExtD3DCreateInterface = (PFN_AmdExtD3DCreateInterface)GetProcAddress(mod_amdxc64, "AmdExtD3DCreateInterface");
-            }
+            if (mod_amdxc64 != nullptr)
+                o_AmdExtD3DCreateInterface = (PFN_AmdExtD3DCreateInterface)GetProcAddress(mod_amdxc64, "AmdExtD3DCreateInterface");
 
             AttachHooks();
         }
@@ -2590,6 +2732,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
                 HookFSR3Dx12Inputs(handle);
 
             HookFSR3ExeInputs();
+
+            //HookFfxExeInputs();
 
             // Initial state of FSR-FG
             State::Instance().activeFgType = Config::Instance()->FGType.value_or_default();
