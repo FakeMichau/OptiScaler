@@ -391,8 +391,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_CreateFeature(ID3D11DeviceContext
 
                 Dx11Contexts[handleId].feature.reset();
                 Dx11Contexts[handleId].feature = nullptr;
-                //auto it = std::find_if(Dx11Contexts.begin(), Dx11Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                //Dx11Contexts.erase(it);
 
                 Config::Instance()->Dx11Upscaler = "fsr22";
             }
@@ -414,8 +412,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_CreateFeature(ID3D11DeviceContext
 
                     Dx11Contexts[handleId].feature.reset();
                     Dx11Contexts[handleId].feature = nullptr;
-                    //auto it = std::find_if(Dx11Contexts.begin(), Dx11Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                    //Dx11Contexts.erase(it);
 
                     Config::Instance()->Dx11Upscaler = "fsr22";
                 }
@@ -440,8 +436,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_CreateFeature(ID3D11DeviceContext
 
                 Dx11Contexts[handleId].feature.reset();
                 Dx11Contexts[handleId].feature = nullptr;
-                //auto it = std::find_if(Dx11Contexts.begin(), Dx11Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                //Dx11Contexts.erase(it);
 
                 Config::Instance()->Dx11Upscaler = "fsr22";
             }
@@ -557,8 +551,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_ReleaseFeature(NVSDK_NGX_Handle* 
         }
 
         Dx11Contexts[handleId].feature.reset();
-        auto it = std::find_if(Dx11Contexts.begin(), Dx11Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-        Dx11Contexts.erase(it);
+        Dx11Contexts.erase(handleId);
 
         if (!shutdown && Config::Instance()->Dx11DelayedInit.value_or_default())
         {
@@ -688,8 +681,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D11_EvaluateFeature(ID3D11DeviceConte
 
                 Dx11Contexts[handleId].feature.reset();
                 Dx11Contexts[handleId].feature = nullptr;
-                //auto it = std::find_if(Dx11Contexts.begin(), Dx11Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                //Dx11Contexts.erase(it);
 
                 State::Instance().currentFeatures.erase(handleId);
             }

@@ -699,8 +699,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_CreateFeature(ID3D12GraphicsComma
 
                 Dx12Contexts[handleId].feature.reset();
                 Dx12Contexts[handleId].feature = nullptr;
-                //auto it = std::find_if(Dx12Contexts.begin(), Dx12Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                //Dx12Contexts.erase(it);
 
                 upscalerChoice = 0;
             }
@@ -721,8 +719,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_CreateFeature(ID3D12GraphicsComma
 
                 Dx12Contexts[handleId].feature.reset();
                 Dx12Contexts[handleId].feature = nullptr;
-                //auto it = std::find_if(Dx12Contexts.begin(), Dx12Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                //Dx12Contexts.erase(it);
 
                 upscalerChoice = 2;
             }
@@ -742,8 +738,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_CreateFeature(ID3D12GraphicsComma
                 LOG_ERROR("can't create new FSR 3.X feature, Fallback to FSR2.1!");
 
                 Dx12Contexts[handleId].feature.reset();
-                auto it = std::find_if(Dx12Contexts.begin(), Dx12Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                Dx12Contexts.erase(it);
+                Dx12Contexts.erase(handleId);
 
                 upscalerChoice = 2;
             }
@@ -897,10 +892,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_ReleaseFeature(NVSDK_NGX_Handle* 
         }
 
         Dx12Contexts[handleId].feature.reset();
-        auto it = std::find_if(Dx12Contexts.begin(), Dx12Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-        Dx12Contexts.erase(it);
-
-        State::Instance().handleIdToCommandList.erase(handleId);
+        Dx12Contexts.erase(handleId);
     }
     else
     {
@@ -1206,18 +1198,13 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                 Dx12Contexts[handleId].createParams->Set(NVSDK_NGX_Parameter_OutWidth, dc->DisplayWidth());
                 Dx12Contexts[handleId].createParams->Set(NVSDK_NGX_Parameter_OutHeight, dc->DisplayHeight());
                 Dx12Contexts[handleId].createParams->Set(NVSDK_NGX_Parameter_PerfQualityValue, dc->PerfQualityValue());
-
-                LOG_DEBUG("Last known command queue: {:X} for command list: {:X}", (uint64_t)CommandQueue::GetLastKnownCommandQueue(InCmdList), (uint64_t)InCmdList);
-                
-                
+              
                 dc->WaitForCommandQueue(1000);
 
                 dc = nullptr;
 
                 Dx12Contexts[handleId].feature.reset();
                 Dx12Contexts[handleId].feature = nullptr;
-                //auto it = std::find_if(Dx12Contexts.begin(), Dx12Contexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                //Dx12Contexts.erase(it);
 
                 State::Instance().currentFeatures.erase(handleId);
 
@@ -1623,8 +1610,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
     // Run upscaler
     auto evalResult = deviceContext->Evaluate(InCmdList, InParameters);
 
-    State::Instance().handleIdToCommandList[handleId] = InCmdList;
-    //deviceContext->SignalCommandQueue(CommandQueue::GetLastKnownCommandQueue(InCmdList));
+    deviceContext->lastKnownCommandList = InCmdList;
 
     // Record the second timestamp 
     if (!State::Instance().isWorkingAsNvngx)

@@ -4,31 +4,24 @@
 #include <upscalers/IFeature_Dx12.h>
 
 PFN_ExecuteCommandLists CommandQueue::o_ExecuteCommandLists = nullptr;
-ankerl::unordered_dense::map<ID3D12GraphicsCommandList*, ID3D12CommandQueue*> CommandQueue::commandListToQueueMap{};
-
-ID3D12CommandQueue* CommandQueue::GetLastKnownCommandQueue(ID3D12GraphicsCommandList* commandList) {
-    return commandListToQueueMap[commandList];
-}
 
 void CommandQueue::hkExecuteCommandLists(ID3D12CommandQueue* This, UINT numCommandLists, ID3D12CommandList* const* ppCommandLists) {
     IFeature_Dx12* dx12Feature = nullptr;
 
     o_ExecuteCommandLists(This, numCommandLists, ppCommandLists);
 
-    // Track which queue is executing which command list
-    for (UINT i = 0; i < numCommandLists; ++i) {
-        ID3D12GraphicsCommandList* cmdList = static_cast<ID3D12GraphicsCommandList*>(ppCommandLists[i]);
-        commandListToQueueMap[cmdList] = This;
+    for (auto& pair : State::Instance().currentFeatures) {
+        IFeature_Dx12* dx12Feature = dynamic_cast<IFeature_Dx12*>(pair.second);
+        if (!dx12Feature) {
+            LOG_WARN("Downcast to IFeature_Dx12 has failed");
+            continue;
+        }
 
-        for (auto& pair : State::Instance().handleIdToCommandList) {
-            if (pair.second == cmdList) {
-                IFeature* feature = State::Instance().currentFeatures[pair.first];
-                IFeature_Dx12* dx12Feature = dynamic_cast<IFeature_Dx12*>(feature);
-                if (dx12Feature)
-                    dx12Feature->SignalCommandQueue(This);
-                else
-                    LOG_WARN("Downcast to feature dx12 has failed");
-            }
+        for (UINT i = 0; i < numCommandLists; ++i) {
+            ID3D12GraphicsCommandList* cmdList = static_cast<ID3D12GraphicsCommandList*>(ppCommandLists[i]);
+
+            if (cmdList == dx12Feature->lastKnownCommandList)
+                dx12Feature->SignalCommandQueue(This);
         }
     }
 }

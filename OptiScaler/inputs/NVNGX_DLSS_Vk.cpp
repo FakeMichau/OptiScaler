@@ -543,8 +543,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_CreateFeature1(VkDevice InDevice
 
                 VkContexts[handleId].feature.reset();
                 VkContexts[handleId].feature = nullptr;
-                //auto it = std::find_if(VkContexts.begin(), VkContexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                //VkContexts.erase(it);
 
                 upscalerChoice = 0;
             }
@@ -565,8 +563,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_CreateFeature1(VkDevice InDevice
 
                 VkContexts[handleId].feature.reset();
                 VkContexts[handleId].feature = nullptr;
-                //auto it = std::find_if(VkContexts.begin(), VkContexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                //VkContexts.erase(it);
 
                 upscalerChoice = 0;
             }
@@ -684,8 +680,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_ReleaseFeature(NVSDK_NGX_Handle*
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
         VkContexts[handleId].feature.reset();
-        auto it = std::find_if(VkContexts.begin(), VkContexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-        VkContexts.erase(it);
+        VkContexts.erase(handleId);
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -851,8 +846,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_VULKAN_EvaluateFeature(VkCommandBuffer 
 
                 VkContexts[handleId].feature.reset();
                 VkContexts[handleId].feature = nullptr;
-                //auto it = std::find_if(VkContexts.begin(), VkContexts.end(), [&handleId](const auto& p) { return p.first == handleId; });
-                //VkContexts.erase(it);
 
                 State::Instance().currentFeatures.erase(handleId);
             }

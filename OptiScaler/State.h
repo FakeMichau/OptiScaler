@@ -49,9 +49,6 @@ public:
 		return currentFeature;
 	}
 
-	// TODO: remove entries on release
-	std::unordered_map<unsigned int, ID3D12GraphicsCommandList*> handleIdToCommandList{};
-
 	// Init flags
 	// Used per feature
 	// Reseting on creation of new feature

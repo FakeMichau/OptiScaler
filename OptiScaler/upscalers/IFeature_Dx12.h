@@ -25,6 +25,9 @@ protected:
 	void ResourceBarrier(ID3D12GraphicsCommandList* InCommandList, ID3D12Resource* InResource, D3D12_RESOURCE_STATES InBeforeState, D3D12_RESOURCE_STATES InAfterState) const;
 
 public:
+	// Could be moved to IFeature as a generic IUnknown to avoid downcasting
+	ID3D12GraphicsCommandList* lastKnownCommandList = nullptr;
+
 	virtual bool Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters) = 0;
 	virtual bool Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters) = 0;
 
