@@ -2,7 +2,6 @@
 #include "pch.h"
 
 #include "upscalers/IFeature.h"
-#include "upscalers/IFeature_Dx12.h"
 
 #include <deque>
 #include <vulkan/vulkan.h>
