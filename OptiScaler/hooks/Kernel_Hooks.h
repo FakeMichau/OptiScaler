@@ -158,6 +158,23 @@ class KernelHooks
             return streamlineModule;
         }
 
+        // sl.common.dll
+        if (CheckDllName(&lcaseLibName, &slCommonNames))
+        {
+            auto commonModule = KernelBaseProxy::LoadLibraryExA_()(lpLibFullPath, NULL, 0);
+
+            if (commonModule != nullptr)
+            {
+                StreamlineHooks::hookCommon(commonModule);
+            }
+            else
+            {
+                LOG_ERROR("Trying to load dll: {}", lcaseLibName);
+            }
+
+            return commonModule;
+        }
+
         // sl.dlss.dll
         if (CheckDllName(&lcaseLibName, &slDlssNames))
         {
@@ -578,6 +595,23 @@ class KernelHooks
             }
 
             return streamlineModule;
+        }
+
+        // sl.common.dll
+        if (CheckDllNameW(&lcaseLibName, &slCommonNamesW))
+        {
+            auto commonModule = KernelBaseProxy::LoadLibraryExW_()(lpLibFullPath, NULL, 0);
+
+            if (commonModule != nullptr)
+            {
+                StreamlineHooks::hookCommon(commonModule);
+            }
+            else
+            {
+                LOG_ERROR("Trying to load dll: {}", lcaseLibNameA);
+            }
+
+            return commonModule;
         }
 
         // sl.dlss.dll

@@ -121,7 +121,7 @@ void ReflexHooks::hookReflex(PFN_NvApi_QueryInterface& queryInterface)
 
 bool ReflexHooks::isDlssgDetected() { return _dlssgDetected; }
 
-bool ReflexHooks::isReflexHooked() { return _inited; }
+bool ReflexHooks::isHooked() { return _inited; }
 
 void* ReflexHooks::getHookedReflex(unsigned int InterfaceId)
 {

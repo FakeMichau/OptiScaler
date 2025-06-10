@@ -2299,7 +2299,7 @@ bool MenuCommon::RenderMenu()
                         ImGui::TextColored(ImVec4(1.f, 0.f, 0.f, 1.f),
                                            "Please put dlssg_to_fsr3_amd_is_better.dll next to OptiScaler");
 
-                    if (!ReflexHooks::isReflexHooked())
+                    if (!ReflexHooks::isHooked())
                     {
                         ImGui::TextColored(ImVec4(1.f, 0.f, 0.f, 1.f), "Reflex not hooked");
                         ImGui::Text("If you are using an AMD/Intel GPU then make sure you have fakenvapi");
@@ -2314,7 +2314,9 @@ bool MenuCommon::RenderMenu()
                     {
                         ImGui::Text("Current DLSSG state:");
                         ImGui::SameLine();
-                        if (ReflexHooks::isDlssgDetected())
+                        if (!ReflexHooks::isHooked())
+                            ImGui::TextColored(ImVec4(1.f, 0.f, 0.f, 1.f), "Unknown");
+                        else if (ReflexHooks::isDlssgDetected())
                             ImGui::TextColored(ImVec4(0.f, 1.f, 0.25f, 1.f), "ON");
                         else
                             ImGui::TextColored(ImVec4(1.f, 0.f, 0.f, 1.f), "OFF");

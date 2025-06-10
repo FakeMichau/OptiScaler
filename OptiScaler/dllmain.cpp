@@ -598,8 +598,11 @@ static void CheckWorkingMode()
 
                     DxgiProxy::Init(dxgiModule);
 
-                    if (!State::Instance().enablerAvailable && Config::Instance()->DxgiSpoofing.value_or_default())
+                    if (!State::Instance().enablerAvailable && (Config::Instance()->DxgiSpoofing.value_or_default() ||
+                                                                Config::Instance()->StreamlineSpoofing.value_or(false)))
+                    {
                         HookDxgiForSpoofing();
+                    }
 
                     if (Config::Instance()->OverlayMenu.value())
                         HooksDx::HookDxgi();
@@ -608,8 +611,12 @@ static void CheckWorkingMode()
             else
             {
                 LOG_DEBUG("dxgi.dll already in memory");
-                if (!State::Instance().enablerAvailable && Config::Instance()->DxgiSpoofing.value_or_default())
+
+                if (!State::Instance().enablerAvailable && (Config::Instance()->DxgiSpoofing.value_or_default() ||
+                                                            Config::Instance()->StreamlineSpoofing.value_or(false)))
+                {
                     HookDxgiForSpoofing();
+                }
 
                 if (Config::Instance()->OverlayMenu.value())
                     HooksDx::HookDxgi();
@@ -692,7 +699,7 @@ static void CheckWorkingMode()
             hookCrypt32();
 
             // Advapi32
-            if (Config::Instance()->DxgiSpoofing.value_or_default())
+            if (Config::Instance()->DxgiSpoofing.value_or_default() || Config::Instance()->StreamlineSpoofing.value_or(false))
                 hookAdvapi32();
 
             // hook streamline right away if it's already loaded

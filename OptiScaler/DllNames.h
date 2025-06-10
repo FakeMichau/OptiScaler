@@ -116,6 +116,7 @@ DEFINE_NAME_VECTORS(nvngx, "nvngx");
 DEFINE_NAME_VECTORS(nvngxDlss, "nvngx_dlss");
 DEFINE_NAME_VECTORS(nvapi, "nvapi64");
 DEFINE_NAME_VECTORS(slInterposer, "sl.interposer");
+DEFINE_NAME_VECTORS(slCommon, "sl.common");
 DEFINE_NAME_VECTORS(slDlss, "sl.dlss");
 DEFINE_NAME_VECTORS(slDlssg, "sl.dlss_g");
 

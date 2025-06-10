@@ -320,6 +320,7 @@ class Config
 
     // Spoofing
     CustomOptional<bool> DxgiSpoofing { true };
+    CustomOptional<bool, NoDefault> StreamlineSpoofing;
     CustomOptional<std::string, NoDefault> DxgiBlacklist; // disabled by default
     CustomOptional<int, NoDefault> DxgiVRAM;              // disabled by default
     CustomOptional<bool> VulkanSpoofing { false };
@@ -342,6 +343,7 @@ class Config
 
     // Frame Generation
     CustomOptional<FGType> FGType { FGType::NoFG };
+    CustomOptional<bool> ConvertDLSStoDLSSG { false };
 
     // OptiFG
     CustomOptional<bool> FGEnabled { false };

@@ -64,6 +64,7 @@ bool Config::Reload(std::filesystem::path iniPath)
                 else if (lstrcmpiA(FGTypeString.value().c_str(), "nukems") == 0)
                     FGType.set_from_config(FGType::Nukems);
             }
+            ConvertDLSStoDLSSG.set_from_config(readBool("FrameGen", "ConvertDLSStoDLSSG"));
         }
 
         // OptiFG
@@ -396,6 +397,7 @@ bool Config::Reload(std::filesystem::path iniPath)
         // Spoofing
         {
             DxgiSpoofing.set_from_config(readBool("Spoofing", "Dxgi"));
+            StreamlineSpoofing.set_from_config(readBool("Spoofing", "StreamlineSpoofing"));
             DxgiBlacklist.set_from_config(readString("Spoofing", "DxgiBlacklist"));
             DxgiVRAM.set_from_config(readInt("Spoofing", "DxgiVRAM"));
             VulkanSpoofing.set_from_config(readBool("Spoofing", "Vulkan"));
@@ -598,6 +600,8 @@ bool Config::SaveIni()
                 FGTypeString = "Nukems";
         }
         ini.SetValue("FrameGen", "FGType", FGTypeString.c_str());
+        ini.SetValue("FrameGen", "ConvertDLSStoDLSSG",
+                     GetBoolValue(Instance()->ConvertDLSStoDLSSG.value_for_config()).c_str());
     }
 
     // OptiFG
@@ -924,6 +928,8 @@ bool Config::SaveIni()
     // Spoofing
     {
         ini.SetValue("Spoofing", "Dxgi", GetBoolValue(Instance()->DxgiSpoofing.value_for_config()).c_str());
+        ini.SetValue("Spoofing", "StreamlineSpoofing",
+                     GetBoolValue(Instance()->StreamlineSpoofing.value_for_config()).c_str());
         ini.SetValue("Spoofing", "DxgiBlacklist", Instance()->DxgiBlacklist.value_for_config_or("auto").c_str());
         ini.SetValue("Spoofing", "Vulkan", GetBoolValue(Instance()->VulkanSpoofing.value_for_config()).c_str());
         ini.SetValue("Spoofing", "VulkanExtensionSpoofing",

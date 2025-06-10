@@ -15,6 +15,7 @@
 #include <proxies/KernelBase_Proxy.h>
 #include <proxies/IGDExt_Proxy.h>
 
+#include "Streamline_Hooks.h"
 #include <nvapi/fakenvapi.h>
 #include <nvapi/ReflexHooks.h>
 
@@ -314,6 +315,14 @@ static HRESULT Present(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags
     LOG_DEBUG("{}", _frameCounter);
 
     HRESULT presentResult;
+
+    // Allow DLSSG to work without Reflex without the pink hue
+    if (StreamlineHooks::slDlssgParams && !ReflexHooks::isHooked())
+    {
+        uint32_t lastFrame;
+        StreamlineHooks::slDlssgParams->get(sl::param::dlss_g::kCurrentFrame, &lastFrame);
+        StreamlineHooks::slDlssgParams->set(sl::param::latency::kCurrentFrame, lastFrame + 1);
+    }
 
     if (State::Instance().isShuttingDown)
     {

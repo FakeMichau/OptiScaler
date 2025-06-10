@@ -145,8 +145,13 @@ static void hookGdi32()
 {
     LOG_FUNC();
 
-    if (Config::Instance()->SpoofHAGS.value_or_default() ||
-        Config::Instance()->FGType.value_or_default() == FGType::Nukems)
+    bool enableHagsSpoofing;
+    if (Config::Instance()->SpoofHAGS.has_value())
+        enableHagsSpoofing = Config::Instance()->SpoofHAGS.value();
+    else
+        enableHagsSpoofing = Config::Instance()->FGType.value_or_default() == FGType::Nukems;
+
+    if (enableHagsSpoofing)
     {
         o_D3DKMTQueryAdapterInfo =
             reinterpret_cast<PFN_D3DKMTQueryAdapterInfo>(DetourFindFunction("gdi32.dll", "D3DKMTQueryAdapterInfo"));
