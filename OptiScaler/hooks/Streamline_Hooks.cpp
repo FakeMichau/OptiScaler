@@ -30,19 +30,23 @@ decltype(&sl1::slInit) StreamlineHooks::o_slInit_sl1 = nullptr;
 sl::PFun_LogMessageCallback* StreamlineHooks::o_logCallback = nullptr;
 sl1::pfunLogMessageCallback* StreamlineHooks::o_logCallback_sl1 = nullptr;
 
+// DLSS
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_dlss_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_dlss_slOnPluginLoad = nullptr;
 
+// DLSSG
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_dlssg_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_dlssg_slOnPluginLoad = nullptr;
 decltype(&slDLSSGSetOptions) StreamlineHooks::o_slDLSSGSetOptions = nullptr;
 
+// Reflex
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_reflex_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slSetConstants_sl1 StreamlineHooks::o_reflex_slSetConstants_sl1 = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_reflex_slOnPluginLoad = nullptr;
 decltype(&slReflexSetOptions) StreamlineHooks::o_slReflexSetOptions = nullptr;
 sl::ReflexMode StreamlineHooks::reflexGamesLastMode = sl::ReflexMode::eOff;
 
+// Common
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_common_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_common_slOnPluginLoad = nullptr;
 
@@ -190,12 +194,29 @@ struct SystemCaps
     bool laptopDevice {};
 };
 
-bool StreamlineHooks::hkslOnPluginLoad(PFN_slOnPluginLoad o_slOnPluginLoad, std::string& config, void* params,
-                                       const char* loaderJSON, const char** pluginJSON)
+struct SystemCapsSl15
+{
+    uint32_t gpuCount {};
+    uint32_t osVersionMajor {};
+    uint32_t osVersionMinor {};
+    uint32_t osVersionBuild {};
+    uint32_t driverVersionMajor {};
+    uint32_t driverVersionMinor {};
+    uint32_t architecture[kMaxNumSupportedGPUs] {};
+    uint32_t implementation[kMaxNumSupportedGPUs] {};
+    uint32_t revision[kMaxNumSupportedGPUs] {};
+    uint32_t gpuLoad[kMaxNumSupportedGPUs] {}; // percentage
+    bool hwSchedulingEnabled {};
+};
+
+bool StreamlineHooks::hkdlss_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON)
 {
     LOG_FUNC();
 
-    auto result = o_slOnPluginLoad(params, loaderJSON, pluginJSON);
+    // TODO: do it better than "static" and hoping for the best
+    static std::string config;
+
+    auto result = o_dlss_slOnPluginLoad(params, loaderJSON, pluginJSON);
 
     if (Config::Instance()->VulkanExtensionSpoofing.value_or_default())
     {
@@ -213,67 +234,69 @@ bool StreamlineHooks::hkslOnPluginLoad(PFN_slOnPluginLoad o_slOnPluginLoad, std:
     return result;
 }
 
-struct SystemCapsSl1
-{
-    uint32_t gpuCount {};
-    uint32_t osVersionMajor {};
-    uint32_t osVersionMinor {};
-    uint32_t osVersionBuild {};
-    uint32_t driverVersionMajor {};
-    uint32_t driverVersionMinor {};
-    uint32_t architecture[2] {};
-    uint32_t implementation[2] {};
-    uint32_t revision[2] {};
-    uint32_t gpuLoad[2] {};
-    bool hwSchedulingEnabled {};
-};
-
-bool StreamlineHooks::hkdlss_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON)
-{
-    if (Config::Instance()->StreamlineSpoofing.value_or_default() && State::Instance().streamlineVersion.major == 1)
-    {
-        SystemCapsSl1* caps = {};
-        sl::param::getPointerParam((sl::param::IParameters*) params, sl::param::common::kSystemCaps, &caps);
-
-        caps->gpuCount = 1;
-        caps->driverVersionMajor = 999;
-        caps->architecture[0] = UINT_MAX;
-        caps->hwSchedulingEnabled = true;
-    }
-
-    // TODO: do it better than "static" and hoping for the best
-    static std::string config;
-    return hkslOnPluginLoad(o_dlss_slOnPluginLoad, config, params, loaderJSON, pluginJSON);
-}
-
 bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON)
 {
+    LOG_FUNC();
+
     // TODO: do it better than "static" and hoping for the best
     static std::string config;
-    return hkslOnPluginLoad(o_dlssg_slOnPluginLoad, config, params, loaderJSON, pluginJSON);
+
+    auto result = o_dlssg_slOnPluginLoad(params, loaderJSON, pluginJSON);
+    nlohmann::json configJson = nlohmann::json::parse(*pluginJSON);
+
+    if (Config::Instance()->VulkanExtensionSpoofing.value_or_default())
+    {
+        configJson["external"]["vk"]["instance"]["extensions"].clear();
+        configJson["external"]["vk"]["device"]["extensions"].clear();
+        configJson["external"]["vk"]["device"]["1.2_features"].clear();
+    }
+
+    config = configJson.dump();
+
+    *pluginJSON = config.c_str();
+
+    return result;
 }
 
 bool StreamlineHooks::hkcommon_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON)
 {
+    LOG_FUNC();
     auto result = o_common_slOnPluginLoad(params, loaderJSON, pluginJSON);
 
-    if (Config::Instance()->StreamlineSpoofing.value_or_default() && State::Instance().streamlineVersion.major > 1)
+    if (Config::Instance()->StreamlineSpoofing.value_or_default())
     {
-        SystemCaps* caps = {};
-        sl::param::getPointerParam((sl::param::IParameters*) params, sl::param::common::kSystemCaps, &caps);
-
-        if (caps)
+        if (State::Instance().streamlineVersion.major > 1)
         {
-            for (auto& adapter : caps->adapters)
-            {
-                if ((uint32_t) adapter.vendor != 0)
-                {
-                    adapter.vendor = VendorId::eNVDA;
-                    adapter.architecture = UINT_MAX;
-                }
-            }
+            SystemCaps* caps = {};
+            sl::param::getPointerParam((sl::param::IParameters*) params, sl::param::common::kSystemCaps, &caps);
 
-            caps->driverVersionMajor = 999;
+            if (caps)
+            {
+                for (auto& adapter : caps->adapters)
+                {
+                    if ((uint32_t) adapter.vendor != 0)
+                    {
+                        adapter.vendor = VendorId::eNVDA;
+                        adapter.architecture = UINT_MAX;
+                    }
+                }
+
+                caps->driverVersionMajor = 999;
+                caps->hwsSupported = true;
+            }
+        }
+        else if (State::Instance().streamlineVersion.major == 1)
+        {
+            LOG_TRACE("Attempting to change system caps for Streamline v1, this could fail depending on the exact version");
+            SystemCapsSl15* caps = {};
+            sl::param::getPointerParam((sl::param::IParameters*) params, sl::param::common::kSystemCaps, &caps);
+
+            if (caps)
+            {
+                caps->architecture[0] = UINT_MAX;
+                caps->driverVersionMajor = 999;
+                caps->hwSchedulingEnabled = true; // this will write outside the struct if SystemCaps is smaller than expected
+            }
         }
     }
 
@@ -360,7 +383,7 @@ void* StreamlineHooks::hkdlssg_slGetPluginFunction(const char* functionName)
 
 bool StreamlineHooks::hkreflex_slSetConstants_sl1(const void* data, uint32_t frameIndex, uint32_t id) 
 {
-    // Streamline v1's version of hkslReflexSetOptions
+    // Streamline v1's version of slReflexSetOptions + slPCLSetMarker
     static sl1::ReflexConstants constants = *(const sl1::ReflexConstants*) data;
 
     reflexGamesLastMode = (sl::ReflexMode) constants.mode;
