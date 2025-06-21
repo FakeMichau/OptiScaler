@@ -8,6 +8,19 @@
 #include <proxies/KernelBase_Proxy.h>
 #include <menu/menu_overlay_base.h>
 #include <nvapi/ReflexHooks.h>
+#include <magic_enum.hpp>
+#include <sl1_reflex.h>
+#include "include/sl.param/parameters.h"
+
+template <typename T> T* findStruct(const void* ptr)
+{
+    auto base = static_cast<const sl::BaseStructure*>(ptr);
+    while (base && base->structType != T::s_structType)
+    {
+        base = base->next;
+    }
+    return (T*) base;
+}
 
 // interposer
 decltype(&slInit) StreamlineHooks::o_slInit = nullptr;
@@ -19,9 +32,19 @@ sl1::pfunLogMessageCallback* StreamlineHooks::o_logCallback_sl1 = nullptr;
 
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_dlss_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_dlss_slOnPluginLoad = nullptr;
+
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_dlssg_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_dlssg_slOnPluginLoad = nullptr;
 decltype(&slDLSSGSetOptions) StreamlineHooks::o_slDLSSGSetOptions = nullptr;
+
+StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_reflex_slGetPluginFunction = nullptr;
+StreamlineHooks::PFN_slSetConstants_sl1 StreamlineHooks::o_reflex_slSetConstants_sl1 = nullptr;
+StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_reflex_slOnPluginLoad = nullptr;
+decltype(&slReflexSetOptions) StreamlineHooks::o_slReflexSetOptions = nullptr;
+sl::ReflexMode StreamlineHooks::reflexGamesLastMode = sl::ReflexMode::eOff;
+
+StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_common_slGetPluginFunction = nullptr;
+StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_common_slOnPluginLoad = nullptr;
 
 char* StreamlineHooks::trimStreamlineLog(const char* msg)
 {
@@ -131,6 +154,42 @@ bool StreamlineHooks::hkslInit_sl1(sl1::Preferences* pref, int applicationId)
     return o_slInit_sl1(*pref, applicationId);
 }
 
+enum class VendorId : uint32_t
+{
+    eMS = 0x1414, // Software Render Adapter
+    eNVDA = 0x10DE,
+    eAMD = 0x1002,
+    eIntel = 0x8086,
+};
+
+struct Adapter
+{
+    LUID id {};
+    VendorId vendor {};
+    uint32_t bit; // in the adapter bit-mask
+    uint32_t architecture {};
+    uint32_t implementation {};
+    uint32_t revision {};
+    uint32_t deviceId {};
+    void* nativeInterface {};
+};
+
+constexpr uint32_t kMaxNumSupportedGPUs = 8;
+
+struct SystemCaps
+{
+    uint32_t gpuCount {};
+    uint32_t osVersionMajor {};
+    uint32_t osVersionMinor {};
+    uint32_t osVersionBuild {};
+    uint32_t driverVersionMajor {};
+    uint32_t driverVersionMinor {};
+    Adapter adapters[kMaxNumSupportedGPUs] {};
+    uint32_t gpuLoad[kMaxNumSupportedGPUs] {}; // percentage
+    bool hwsSupported {};                      // OS wide setting, not per adapter
+    bool laptopDevice {};
+};
+
 bool StreamlineHooks::hkslOnPluginLoad(PFN_slOnPluginLoad o_slOnPluginLoad, std::string& config, void* params,
                                        const char* loaderJSON, const char** pluginJSON)
 {
@@ -154,8 +213,34 @@ bool StreamlineHooks::hkslOnPluginLoad(PFN_slOnPluginLoad o_slOnPluginLoad, std:
     return result;
 }
 
+struct SystemCapsSl1
+{
+    uint32_t gpuCount {};
+    uint32_t osVersionMajor {};
+    uint32_t osVersionMinor {};
+    uint32_t osVersionBuild {};
+    uint32_t driverVersionMajor {};
+    uint32_t driverVersionMinor {};
+    uint32_t architecture[2] {};
+    uint32_t implementation[2] {};
+    uint32_t revision[2] {};
+    uint32_t gpuLoad[2] {};
+    bool hwSchedulingEnabled {};
+};
+
 bool StreamlineHooks::hkdlss_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON)
 {
+    if (Config::Instance()->StreamlineSpoofing.value_or_default() && State::Instance().streamlineVersion.major == 1)
+    {
+        SystemCapsSl1* caps = {};
+        sl::param::getPointerParam((sl::param::IParameters*) params, sl::param::common::kSystemCaps, &caps);
+
+        caps->gpuCount = 1;
+        caps->driverVersionMajor = 999;
+        caps->architecture[0] = UINT_MAX;
+        caps->hwSchedulingEnabled = true;
+    }
+
     // TODO: do it better than "static" and hoping for the best
     static std::string config;
     return hkslOnPluginLoad(o_dlss_slOnPluginLoad, config, params, loaderJSON, pluginJSON);
@@ -166,6 +251,33 @@ bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSO
     // TODO: do it better than "static" and hoping for the best
     static std::string config;
     return hkslOnPluginLoad(o_dlssg_slOnPluginLoad, config, params, loaderJSON, pluginJSON);
+}
+
+bool StreamlineHooks::hkcommon_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON)
+{
+    auto result = o_common_slOnPluginLoad(params, loaderJSON, pluginJSON);
+
+    if (Config::Instance()->StreamlineSpoofing.value_or_default() && State::Instance().streamlineVersion.major > 1)
+    {
+        SystemCaps* caps = {};
+        sl::param::getPointerParam((sl::param::IParameters*) params, sl::param::common::kSystemCaps, &caps);
+
+        if (caps)
+        {
+            for (auto& adapter : caps->adapters)
+            {
+                if ((uint32_t) adapter.vendor != 0)
+                {
+                    adapter.vendor = VendorId::eNVDA;
+                    adapter.architecture = UINT_MAX;
+                }
+            }
+
+            caps->driverVersionMajor = 999;
+        }
+    }
+
+    return result;
 }
 
 sl::Result StreamlineHooks::hkslDLSSGSetOptions(const sl::ViewportHandle& viewport, const sl::DLSSGOptions& options)
@@ -191,6 +303,27 @@ sl::Result StreamlineHooks::hkslDLSSGSetOptions(const sl::ViewportHandle& viewpo
     // Can't tell if eAuto means enabled or disabled
     ReflexHooks::setDlssgDetectedState(options.mode == sl::DLSSGMode::eOn);
     return o_slDLSSGSetOptions(viewport, options);
+}
+
+bool StreamlineHooks::hkreflex_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON)
+{
+    auto result = o_reflex_slOnPluginLoad(params, loaderJSON, pluginJSON);
+    return result;
+}
+
+sl::Result StreamlineHooks::hkslReflexSetOptions(const sl::ReflexOptions& options)
+{
+    reflexGamesLastMode = options.mode;
+
+    sl::ReflexOptions newOptions = options;
+
+    if (Config::Instance()->FN_ForceReflex == 2)
+        newOptions.mode = sl::ReflexMode::eLowLatencyWithBoost;
+
+    if (Config::Instance()->FN_ForceReflex == 1)
+        newOptions.mode = sl::ReflexMode::eOff;
+
+    return o_slReflexSetOptions(newOptions);
 }
 
 void* StreamlineHooks::hkdlss_slGetPluginFunction(const char* functionName)
@@ -223,6 +356,80 @@ void* StreamlineHooks::hkdlssg_slGetPluginFunction(const char* functionName)
     }
 
     return o_dlssg_slGetPluginFunction(functionName);
+}
+
+bool StreamlineHooks::hkreflex_slSetConstants_sl1(const void* data, uint32_t frameIndex, uint32_t id) 
+{
+    // Streamline v1's version of hkslReflexSetOptions
+    static sl1::ReflexConstants constants = *(const sl1::ReflexConstants*) data;
+
+    reflexGamesLastMode = (sl::ReflexMode) constants.mode;
+
+    if (Config::Instance()->FN_ForceReflex == 2)
+        constants.mode = sl1::ReflexMode::eReflexModeLowLatencyWithBoost;
+    else if (Config::Instance()->FN_ForceReflex == 1)
+        constants.mode = sl1::ReflexMode::eReflexModeOff;
+
+    return o_reflex_slSetConstants_sl1(&constants, frameIndex, id);
+}
+
+void* StreamlineHooks::hkreflex_slGetPluginFunction(const char* functionName)
+{
+    LOG_DEBUG("{}", functionName);
+
+    if (strcmp(functionName, "slSetConstants") == 0 && State::Instance().streamlineVersion.major == 1)
+    {
+        o_reflex_slSetConstants_sl1 = (PFN_slSetConstants_sl1) o_reflex_slGetPluginFunction(functionName);
+        return &hkreflex_slSetConstants_sl1;
+    }
+
+    if (strcmp(functionName, "slOnPluginLoad") == 0)
+    {
+        o_reflex_slOnPluginLoad = (PFN_slOnPluginLoad) o_reflex_slGetPluginFunction(functionName);
+        return &hkreflex_slOnPluginLoad;
+    }
+
+    if (strcmp(functionName, "slReflexSetOptions") == 0)
+    {
+        o_slReflexSetOptions = (decltype(&slReflexSetOptions)) o_reflex_slGetPluginFunction(functionName);
+        return &hkslReflexSetOptions;
+    }
+
+    return o_reflex_slGetPluginFunction(functionName);
+}
+
+
+void* StreamlineHooks::hkcommon_slGetPluginFunction(const char* functionName)
+{
+    LOG_DEBUG("{}", functionName);
+
+    if (strcmp(functionName, "slOnPluginLoad") == 0)
+    {
+        o_common_slOnPluginLoad = (PFN_slOnPluginLoad) o_common_slGetPluginFunction(functionName);
+        return &hkcommon_slOnPluginLoad;
+    }
+
+    return o_common_slGetPluginFunction(functionName);
+}
+
+void StreamlineHooks::updateForceReflex()
+{
+    // Not needed for Streamline v1 as slSetConstants is sent every frame
+    if (o_slReflexSetOptions)
+    {
+        sl::ReflexOptions options;
+
+        auto forceReflex = Config::Instance()->FN_ForceReflex.value_or_default();
+
+        if (forceReflex == 2)
+            options.mode = sl::ReflexMode::eLowLatencyWithBoost;
+        else if (forceReflex == 1)
+            options.mode = sl::ReflexMode::eOff;
+        else if (forceReflex == 0)
+            options.mode = reflexGamesLastMode;
+
+        auto result = o_slReflexSetOptions(options);
+    }
 }
 
 // SL INTERPOSER
@@ -282,6 +489,11 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
 
         Util::version_t sl_version;
         Util::GetDLLVersion(string_to_wstring(dllPath), &sl_version);
+
+        State::Instance().streamlineVersion.major = sl_version.major;
+        State::Instance().streamlineVersion.minor = sl_version.minor;
+        State::Instance().streamlineVersion.patch = sl_version.patch;
+
         LOG_INFO("Streamline version: {}.{}.{}", sl_version.major, sl_version.minor, sl_version.patch);
 
         if (sl_version.major >= 2)
@@ -412,6 +624,98 @@ void StreamlineHooks::hookDlssg(HMODULE slDlssg)
         DetourUpdateThread(GetCurrentThread());
 
         DetourAttach(&(PVOID&) o_dlssg_slGetPluginFunction, hkdlssg_slGetPluginFunction);
+
+        DetourTransactionCommit();
+    }
+}
+
+// SL REFLEX
+
+void StreamlineHooks::unhookReflex()
+{
+    LOG_FUNC();
+
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
+
+    if (o_reflex_slGetPluginFunction)
+    {
+        DetourDetach(&(PVOID&) o_reflex_slGetPluginFunction, hkreflex_slGetPluginFunction);
+        o_reflex_slGetPluginFunction = nullptr;
+    }
+
+    DetourTransactionCommit();
+}
+
+void StreamlineHooks::hookReflex(HMODULE slReflex)
+{
+    LOG_FUNC();
+
+    if (!slReflex)
+    {
+        LOG_WARN("Reflex module in NULL");
+        return;
+    }
+
+    if (o_reflex_slGetPluginFunction)
+        unhookReflex();
+
+    o_reflex_slGetPluginFunction =
+        reinterpret_cast<PFN_slGetPluginFunction>(KernelBaseProxy::GetProcAddress_()(slReflex, "slGetPluginFunction"));
+
+    if (o_reflex_slGetPluginFunction != nullptr)
+    {
+        LOG_TRACE("Hooking slGetPluginFunction in sl.reflex");
+        DetourTransactionBegin();
+        DetourUpdateThread(GetCurrentThread());
+
+        DetourAttach(&(PVOID&) o_reflex_slGetPluginFunction, hkreflex_slGetPluginFunction);
+
+        DetourTransactionCommit();
+    }
+}
+
+// SL COMMON
+
+void StreamlineHooks::unhookCommon()
+{
+    LOG_FUNC();
+
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
+
+    if (o_common_slGetPluginFunction)
+    {
+        DetourDetach(&(PVOID&) o_common_slGetPluginFunction, hkcommon_slGetPluginFunction);
+        o_common_slGetPluginFunction = nullptr;
+    }
+
+    DetourTransactionCommit();
+}
+
+void StreamlineHooks::hookCommon(HMODULE slCommon)
+{
+    LOG_FUNC();
+
+    if (!slCommon)
+    {
+        LOG_WARN("Common module in NULL");
+        return;
+    }
+
+    if (o_common_slGetPluginFunction)
+        unhookCommon();
+
+    o_common_slGetPluginFunction =
+        reinterpret_cast<PFN_slGetPluginFunction>(KernelBaseProxy::GetProcAddress_()(slCommon, "slGetPluginFunction"));
+
+    if (o_common_slGetPluginFunction != nullptr)
+    {
+        LOG_TRACE("Hooking slGetPluginFunction in sl.common");
+        DetourTransactionBegin();
+        DetourUpdateThread(GetCurrentThread());
+
+        DetourAttach(&(PVOID&) o_common_slGetPluginFunction, hkcommon_slGetPluginFunction);
 
         DetourTransactionCommit();
     }

@@ -63,7 +63,7 @@ enum class PCLMarker: uint32_t
     eRenderSubmitEnd = 3,
     ePresentStart = 4,
     ePresentEnd = 5,
-    //eInputSample = 6, // Deprecated
+    eInputSample = 6, // Deprecated
     eTriggerFlash = 7,
     ePCLatencyPing = 8,
     eOutOfBandRenderSubmitStart = 9,

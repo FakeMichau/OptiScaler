@@ -691,7 +691,7 @@ static void CheckWorkingMode()
             hookCrypt32();
 
             // Advapi32
-            if (Config::Instance()->DxgiSpoofing.value_or_default())
+            if (Config::Instance()->DxgiSpoofing.value_or_default() || Config::Instance()->StreamlineSpoofing.value_or_default())
                 hookAdvapi32();
 
             // hook streamline right away if it's already loaded
@@ -717,6 +717,22 @@ static void CheckWorkingMode()
             {
                 LOG_DEBUG("sl.dlss_g.dll already in memory");
                 StreamlineHooks::hookDlssg(slDlssg);
+            }
+
+            HMODULE slReflex = nullptr;
+            slReflex = KernelBaseProxy::GetModuleHandleW_()(L"sl.reflex.dll");
+            if (slReflex != nullptr)
+            {
+                LOG_DEBUG("sl.reflex.dll already in memory");
+                StreamlineHooks::hookReflex(slReflex);
+            }
+
+            HMODULE slCommon = nullptr;
+            slCommon = KernelBaseProxy::GetModuleHandleW_()(L"sl.common.dll");
+            if (slCommon != nullptr)
+            {
+                LOG_DEBUG("sl.common.dll already in memory");
+                StreamlineHooks::hookCommon(slCommon);
             }
 
             // XeSS
@@ -1080,6 +1096,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
 
                 if (!Config::Instance()->DxgiSpoofing.has_value())
                     Config::Instance()->DxgiSpoofing.set_volatile_value(false);
+
+                if (!Config::Instance()->StreamlineSpoofing.has_value())
+                    Config::Instance()->StreamlineSpoofing.set_volatile_value(false);
             }
             else
             {
