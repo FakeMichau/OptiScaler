@@ -493,6 +493,13 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
 {
     LOG_FUNC();
 
+    static HMODULE last_slInterposer = nullptr;
+
+    if (last_slInterposer == slInterposer)
+        return;
+
+    last_slInterposer = slInterposer;
+
     if (!slInterposer)
     {
         LOG_WARN("Streamline module in NULL");

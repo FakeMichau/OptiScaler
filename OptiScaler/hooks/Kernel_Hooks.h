@@ -141,8 +141,7 @@ class KernelHooks
         }
 
         // sl.interposer.dll
-        if (Config::Instance()->FGType.value_or_default() == FGType::Nukems &&
-            CheckDllName(&lcaseLibName, &slInterposerNames))
+        if (CheckDllName(&lcaseLibName, &slInterposerNames))
         {
             auto streamlineModule = KernelBaseProxy::LoadLibraryExA_()(lpLibFullPath, NULL, 0);
 
@@ -595,8 +594,7 @@ class KernelHooks
         }
 
         // sl.interposer.dll
-        if (Config::Instance()->FGType.value_or_default() == FGType::Nukems &&
-            CheckDllNameW(&lcaseLibName, &slInterposerNamesW))
+        if (CheckDllNameW(&lcaseLibName, &slInterposerNamesW))
         {
             auto streamlineModule = KernelBaseProxy::LoadLibraryExW_()(lpLibFullPath, NULL, 0);
 
