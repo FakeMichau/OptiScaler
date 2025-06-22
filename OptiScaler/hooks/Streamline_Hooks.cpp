@@ -49,6 +49,7 @@ sl::ReflexMode StreamlineHooks::reflexGamesLastMode = sl::ReflexMode::eOff;
 // Common
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_common_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_common_slOnPluginLoad = nullptr;
+StreamlineHooks::PFN_slSetParameters_sl1 StreamlineHooks::o_common_slSetParameters_sl1 = nullptr;
 
 char* StreamlineHooks::trimStreamlineLog(const char* msg)
 {
@@ -287,7 +288,8 @@ bool StreamlineHooks::hkcommon_slOnPluginLoad(void* params, const char* loaderJS
         }
         else if (State::Instance().streamlineVersion.major == 1)
         {
-            LOG_TRACE("Attempting to change system caps for Streamline v1, this could fail depending on the exact version");
+            LOG_TRACE(
+                "Attempting to change system caps for Streamline v1, this could fail depending on the exact version");
             SystemCapsSl15* caps = {};
             sl::param::getPointerParam((sl::param::IParameters*) params, sl::param::common::kSystemCaps, &caps);
 
@@ -295,7 +297,11 @@ bool StreamlineHooks::hkcommon_slOnPluginLoad(void* params, const char* loaderJS
             {
                 caps->architecture[0] = UINT_MAX;
                 caps->driverVersionMajor = 999;
-                caps->hwSchedulingEnabled = true; // this will write outside the struct if SystemCaps is smaller than expected
+
+                // This will write outside the struct if SystemCaps is smaller than expected
+                // Witcher 3 (sl 1.5) uses this layout
+                // Layout from Streamline 1.3 is somehow bigger than this so it should be fine
+                caps->hwSchedulingEnabled = true;
             }
         }
     }
@@ -381,12 +387,15 @@ void* StreamlineHooks::hkdlssg_slGetPluginFunction(const char* functionName)
     return o_dlssg_slGetPluginFunction(functionName);
 }
 
-bool StreamlineHooks::hkreflex_slSetConstants_sl1(const void* data, uint32_t frameIndex, uint32_t id) 
+bool StreamlineHooks::hkreflex_slSetConstants_sl1(const void* data, uint32_t frameIndex, uint32_t id)
 {
     // Streamline v1's version of slReflexSetOptions + slPCLSetMarker
-    static sl1::ReflexConstants constants = *(const sl1::ReflexConstants*) data;
+    static sl1::ReflexConstants constants {};
+    constants = *(const sl1::ReflexConstants*) data;
 
     reflexGamesLastMode = (sl::ReflexMode) constants.mode;
+
+    LOG_DEBUG("mode: {}, frameIndex: {}, id: {}", (uint32_t) constants.mode, frameIndex, id);
 
     if (Config::Instance()->FN_ForceReflex == 2)
         constants.mode = sl1::ReflexMode::eReflexModeLowLatencyWithBoost;
@@ -421,6 +430,54 @@ void* StreamlineHooks::hkreflex_slGetPluginFunction(const char* functionName)
     return o_reflex_slGetPluginFunction(functionName);
 }
 
+typedef bool (*PFN_set)(void* self, const char* key, void** value);
+PFN_set o_set = nullptr;
+
+bool hk_set(void* self, const char* key, void** value)
+{
+    LOG_DEBUG("{}", key);
+    if (strcmp(key, sl::param::common::kSystemCaps) == 0)
+    {
+        LOG_TRACE("Attempting to change system caps for Streamline v1, this could fail depending on the exact version");
+
+        // SystemCapsSl15 is not entirely correct for Streamline 1.3
+        // But we here only use the beginning that matches + extra
+        auto caps = (SystemCapsSl15*) value;
+
+        if (caps)
+        {
+            caps->gpuCount = 1;
+            caps->architecture[0] = UINT_MAX;
+            caps->driverVersionMajor = 999;
+
+            // HAGS
+            *((char*) value + 56) = (char) 0x01;
+        }
+    }
+
+    return o_set(self, key, value);
+}
+
+void StreamlineHooks::hkcommon_slSetParameters_sl1(void* params)
+{
+    LOG_DEBUG("{:X}", (uint64_t) params);
+
+    if (o_set == nullptr && params)
+    {
+        void** vtable = *(void***) params;
+
+        DWORD oldProtect;
+        VirtualProtect(&vtable[0], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProtect);
+
+        o_set = (PFN_set) vtable[0];
+
+        vtable[0] = (void*) &hk_set;
+
+        VirtualProtect(&vtable[0], sizeof(void*), oldProtect, &oldProtect);
+    }
+
+    o_common_slSetParameters_sl1(params);
+}
 
 void* StreamlineHooks::hkcommon_slGetPluginFunction(const char* functionName)
 {
@@ -430,6 +487,13 @@ void* StreamlineHooks::hkcommon_slGetPluginFunction(const char* functionName)
     {
         o_common_slOnPluginLoad = (PFN_slOnPluginLoad) o_common_slGetPluginFunction(functionName);
         return &hkcommon_slOnPluginLoad;
+    }
+
+    // Used around Streamline v1.3
+    if (strcmp(functionName, "slSetParameters") == 0)
+    {
+        o_common_slSetParameters_sl1 = (PFN_slSetParameters_sl1) o_common_slGetPluginFunction(functionName);
+        return &hkcommon_slSetParameters_sl1;
     }
 
     return o_common_slGetPluginFunction(functionName);

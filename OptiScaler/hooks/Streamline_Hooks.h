@@ -16,6 +16,7 @@ class StreamlineHooks
     typedef bool (*PFN_slOnPluginLoad)(void* params, const char* loaderJSON, const char** pluginJSON);
     typedef sl::Result (*PFN_slSetData)(const sl::BaseStructure* inputs, sl::CommandBuffer* cmdBuffer);
     typedef bool (*PFN_slSetConstants_sl1)(const void* data, uint32_t frameIndex, uint32_t id);
+    typedef void (*PFN_slSetParameters_sl1)(void* params);
 
     static void updateForceReflex();
 
@@ -74,10 +75,11 @@ class StreamlineHooks
     // Common
     static PFN_slGetPluginFunction o_common_slGetPluginFunction;
     static PFN_slOnPluginLoad o_common_slOnPluginLoad;
+    static PFN_slSetParameters_sl1 o_common_slSetParameters_sl1;
 
     static bool hkcommon_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON);
     static void* hkcommon_slGetPluginFunction(const char* functionName);
-
+    static void hkcommon_slSetParameters_sl1(void* params);
 
     static char* trimStreamlineLog(const char* msg);
 

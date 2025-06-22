@@ -691,7 +691,8 @@ static void CheckWorkingMode()
             hookCrypt32();
 
             // Advapi32
-            if (Config::Instance()->DxgiSpoofing.value_or_default() || Config::Instance()->StreamlineSpoofing.value_or_default())
+            if (Config::Instance()->DxgiSpoofing.value_or_default() ||
+                Config::Instance()->StreamlineSpoofing.value_or_default())
                 hookAdvapi32();
 
             // hook streamline right away if it's already loaded
@@ -941,6 +942,18 @@ static void CheckQuirks()
     {
         State::Instance().gameQuirks.set(GameQuirk::LoadD3D12Manually);
         LOG_INFO("Enabling a quirk for PoE2 (Load d3d12.dll)");
+    }
+    else if (exePathFilename == "kunitsugami.exe" || exePathFilename == "monsterhunterrise.exe" ||
+             exePathFilename == "drdr.exe" || exePathFilename == "dd2ccs.exe" ||
+             exePathFilename == "kunitsugamidemo.exe" || exePathFilename == "dd2.exe" ||
+             exePathFilename == "monsterhunterwilds.exe")
+    {
+        if (!State::Instance().isRunningOnNvidia && !Config::Instance()->DxgiSpoofing.value_or_default() &&
+            !Config::Instance()->RestoreComputeSignature.has_value())
+        {
+            Config::Instance()->RestoreComputeSignature.set_volatile_value(true);
+            LOG_INFO("Enabling restore compute signature");
+        }
     }
 }
 
