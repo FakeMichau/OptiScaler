@@ -12,16 +12,6 @@
 #include <sl1_reflex.h>
 #include "include/sl.param/parameters.h"
 
-template <typename T> T* findStruct(const void* ptr)
-{
-    auto base = static_cast<const sl::BaseStructure*>(ptr);
-    while (base && base->structType != T::s_structType)
-    {
-        base = base->next;
-    }
-    return (T*) base;
-}
-
 // interposer
 decltype(&slInit) StreamlineHooks::o_slInit = nullptr;
 decltype(&slSetTag) StreamlineHooks::o_slSetTag = nullptr;
@@ -50,6 +40,7 @@ sl::ReflexMode StreamlineHooks::reflexGamesLastMode = sl::ReflexMode::eOff;
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_common_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_common_slOnPluginLoad = nullptr;
 StreamlineHooks::PFN_slSetParameters_sl1 StreamlineHooks::o_common_slSetParameters_sl1 = nullptr;
+StreamlineHooks::PFN_setVoid StreamlineHooks::o_setVoid = nullptr;
 
 char* StreamlineHooks::trimStreamlineLog(const char* msg)
 {
@@ -288,6 +279,8 @@ bool StreamlineHooks::hkcommon_slOnPluginLoad(void* params, const char* loaderJS
         }
         else if (State::Instance().streamlineVersion.major == 1)
         {
+            // This should be Streamline 1.5 as previous versions don't even have slOnPluginLoad
+
             LOG_TRACE(
                 "Attempting to change system caps for Streamline v1, this could fail depending on the exact version");
             SystemCapsSl15* caps = {};
@@ -357,7 +350,7 @@ sl::Result StreamlineHooks::hkslReflexSetOptions(const sl::ReflexOptions& option
 
 void* StreamlineHooks::hkdlss_slGetPluginFunction(const char* functionName)
 {
-    LOG_DEBUG("{}", functionName);
+    // LOG_DEBUG("{}", functionName);
 
     if (strcmp(functionName, "slOnPluginLoad") == 0)
     {
@@ -370,7 +363,7 @@ void* StreamlineHooks::hkdlss_slGetPluginFunction(const char* functionName)
 
 void* StreamlineHooks::hkdlssg_slGetPluginFunction(const char* functionName)
 {
-    LOG_DEBUG("{}", functionName);
+    // LOG_DEBUG("{}", functionName);
 
     if (strcmp(functionName, "slOnPluginLoad") == 0)
     {
@@ -407,7 +400,7 @@ bool StreamlineHooks::hkreflex_slSetConstants_sl1(const void* data, uint32_t fra
 
 void* StreamlineHooks::hkreflex_slGetPluginFunction(const char* functionName)
 {
-    LOG_DEBUG("{}", functionName);
+    // LOG_DEBUG("{}", functionName);
 
     if (strcmp(functionName, "slSetConstants") == 0 && State::Instance().streamlineVersion.major == 1)
     {
@@ -430,12 +423,11 @@ void* StreamlineHooks::hkreflex_slGetPluginFunction(const char* functionName)
     return o_reflex_slGetPluginFunction(functionName);
 }
 
-typedef bool (*PFN_set)(void* self, const char* key, void** value);
-PFN_set o_set = nullptr;
 
-bool hk_set(void* self, const char* key, void** value)
+bool StreamlineHooks::hk_setVoid(void* self, const char* key, void** value)
 {
-    LOG_DEBUG("{}", key);
+    // LOG_DEBUG("{}", key);
+
     if (strcmp(key, sl::param::common::kSystemCaps) == 0)
     {
         LOG_TRACE("Attempting to change system caps for Streamline v1, this could fail depending on the exact version");
@@ -455,25 +447,27 @@ bool hk_set(void* self, const char* key, void** value)
         }
     }
 
-    return o_set(self, key, value);
+    return o_setVoid(self, key, value);
 }
 
 void StreamlineHooks::hkcommon_slSetParameters_sl1(void* params)
 {
-    LOG_DEBUG("{:X}", (uint64_t) params);
+    LOG_FUNC();
 
-    if (o_set == nullptr && params)
+    if (o_setVoid == nullptr && params)
     {
         void** vtable = *(void***) params;
 
-        DWORD oldProtect;
-        VirtualProtect(&vtable[0], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProtect);
+        // It's flipped, 0 -> set void*, 7 -> get void*
+        o_setVoid = (PFN_setVoid) vtable[0];
 
-        o_set = (PFN_set) vtable[0];
+        DetourTransactionBegin();
+        DetourUpdateThread(GetCurrentThread());
 
-        vtable[0] = (void*) &hk_set;
+        if (o_setVoid != nullptr)
+            DetourAttach(&(PVOID&) o_setVoid, hk_setVoid);
 
-        VirtualProtect(&vtable[0], sizeof(void*), oldProtect, &oldProtect);
+        DetourTransactionCommit();
     }
 
     o_common_slSetParameters_sl1(params);
@@ -481,7 +475,7 @@ void StreamlineHooks::hkcommon_slSetParameters_sl1(void* params)
 
 void* StreamlineHooks::hkcommon_slGetPluginFunction(const char* functionName)
 {
-    LOG_DEBUG("{}", functionName);
+    // LOG_DEBUG("{}", functionName);
 
     if (strcmp(functionName, "slOnPluginLoad") == 0)
     {
@@ -489,7 +483,7 @@ void* StreamlineHooks::hkcommon_slGetPluginFunction(const char* functionName)
         return &hkcommon_slOnPluginLoad;
     }
 
-    // Used around Streamline v1.3
+    // Used around Streamline v1.3, as 1.5 doesn't seem to have it anymore
     if (strcmp(functionName, "slSetParameters") == 0)
     {
         o_common_slSetParameters_sl1 = (PFN_slSetParameters_sl1) o_common_slGetPluginFunction(functionName);
@@ -557,18 +551,18 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
 {
     LOG_FUNC();
 
+    if (!slInterposer)
+    {
+        LOG_WARN("Streamline module in NULL");
+        return;
+    }
+
     static HMODULE last_slInterposer = nullptr;
 
     if (last_slInterposer == slInterposer)
         return;
 
     last_slInterposer = slInterposer;
-
-    if (!slInterposer)
-    {
-        LOG_WARN("Streamline module in NULL");
-        return;
-    }
 
     // Looks like when reading DLL version load methods are called
     // To prevent loops disabling checks for sl.interposer.dll
