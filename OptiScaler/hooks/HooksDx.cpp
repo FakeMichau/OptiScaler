@@ -352,7 +352,7 @@ static HRESULT Present(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags
 
         _lastFrameTime = now;
         State::Instance().lastFrameTime = ftDelta;
-        LOG_DEBUG("Frametime: {0}", ftDelta);
+        LOG_DEBUG("Frametime: {:0.3f} ms", ftDelta);
     }
 
     // Removing might cause issues, saved almost 1 ms
