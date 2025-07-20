@@ -146,7 +146,7 @@ static void hookGdi32()
     LOG_FUNC();
 
     if (Config::Instance()->SpoofHAGS.value_or_default() ||
-        Config::Instance()->FGType.value_or_default() == FGType::Nukems)
+        Config::Instance()->FGType.value_or_default() != FGType::NoFG)
     {
         o_D3DKMTQueryAdapterInfo =
             reinterpret_cast<PFN_D3DKMTQueryAdapterInfo>(DetourFindFunction("gdi32.dll", "D3DKMTQueryAdapterInfo"));

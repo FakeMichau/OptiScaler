@@ -109,6 +109,17 @@ sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::Resourc
             tags[i].resource->state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             LOG_TRACE("Changing hudless resource state");
         }
+        else if (tags[i].type == sl::kBufferTypeHUDLessColor)
+        {
+            auto hudlessResource = tags[i].resource->native;
+
+            auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
+            if (fg != nullptr)
+                fg->SetHudless((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) hudlessResource,
+                               (D3D12_RESOURCE_STATES) tags[i].resource->state, tags[i].lifecycle == sl::eOnlyValidNow);
+
+            LOG_TRACE("HUDLESS set");
+        }
     }
     auto result = o_slSetTag(viewport, tags, numTags, cmdBuffer);
     return result;
@@ -268,15 +279,18 @@ bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSO
     // TODO: do it better than "static" and hoping for the best
     static std::string config;
 
-    if (Config::Instance()->StreamlineSpoofing.value_or_default() && Config::Instance()->FGType != FGType::Nukems)
+    if (Config::Instance()->StreamlineSpoofing.value_or_default() && Config::Instance()->FGType == FGType::NoFG)
         setSystemCapsArch((sl::param::IParameters*) params, 0);
 
     auto result = o_dlssg_slOnPluginLoad(params, loaderJSON, pluginJSON);
 
-    if (Config::Instance()->StreamlineSpoofing.value_or_default() && Config::Instance()->FGType != FGType::Nukems)
+    if (Config::Instance()->StreamlineSpoofing.value_or_default() && Config::Instance()->FGType == FGType::NoFG)
         setSystemCapsArch((sl::param::IParameters*) params, UINT_MAX);
 
     nlohmann::json configJson = nlohmann::json::parse(*pluginJSON);
+
+    configJson["hooks"].clear();
+    configJson["exclusive_hooks"].clear();
 
     if (Config::Instance()->VulkanExtensionSpoofing.value_or_default())
     {
@@ -600,7 +614,7 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
                 DetourTransactionBegin();
                 DetourUpdateThread(GetCurrentThread());
 
-                if (Config::Instance()->FGType.value_or_default() == FGType::Nukems)
+                if (Config::Instance()->FGType.value_or_default() != FGType::NoFG)
                     DetourAttach(&(PVOID&) o_slSetTag, hkslSetTag);
 
                 DetourAttach(&(PVOID&) o_slInit, hkslInit);

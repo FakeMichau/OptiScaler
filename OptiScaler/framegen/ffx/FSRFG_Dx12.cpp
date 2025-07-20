@@ -118,18 +118,25 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
     DXGI_SWAP_CHAIN_DESC scDesc {};
     _swapChain->GetDesc(&scDesc);
     auto desc = output->GetDesc();
-    if (Config::Instance()->FGHUDFixExtended.value_or_default() && desc.Format == scDesc.BufferDesc.Format)
+
+    auto index = GetIndex();
+    if (_paramHudless[index].resource != nullptr)
+    {
+        m_FrameGenerationConfig.HUDLessColor =
+            ffxApiGetResourceDX12(_paramHudless[index].resource, _paramHudless[index].getFfxApiState());
+    }
+    else if (Config::Instance()->FGHUDFixExtended.value_or_default() && desc.Format == scDesc.BufferDesc.Format)
     {
         if (desc.Width == scDesc.BufferDesc.Width && desc.Height == scDesc.BufferDesc.Height)
         {
             if (CreateBufferResource(State::Instance().currentD3D12Device, output, D3D12_RESOURCE_STATE_COPY_DEST,
-                                     &_paramHudless[frameIndex], true, false))
+                                     &_paramHudless[frameIndex].resource, true, false))
             {
                 LOG_DEBUG("(FG) desc.Format == HooksDx::swapchainFormat, using for hudless!");
-                cmdList->CopyResource(_paramHudless[frameIndex], output);
+                cmdList->CopyResource(_paramHudless[frameIndex].resource, output);
 
                 m_FrameGenerationConfig.HUDLessColor =
-                    ffxApiGetResourceDX12(_paramHudless[frameIndex], FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
+                    ffxApiGetResourceDX12(_paramHudless[frameIndex].resource, FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
             }
         }
         else if (Config::Instance()->FGRelaxedResolutionCheck.value_or_default() &&
@@ -138,7 +145,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
                  State::Instance().currentD3D12Device != nullptr)
         {
             if (CreateBufferResourceWithSize(State::Instance().currentD3D12Device, output,
-                                             D3D12_RESOURCE_STATE_COPY_DEST, &_paramHudless[frameIndex],
+                                             D3D12_RESOURCE_STATE_COPY_DEST, &_paramHudless[frameIndex].resource,
                                              scDesc.BufferDesc.Width, scDesc.BufferDesc.Height, true, false))
             {
                 D3D12_TEXTURE_COPY_LOCATION srcLocation;
@@ -149,7 +156,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
                 D3D12_TEXTURE_COPY_LOCATION dstLocation;
                 ZeroMemory(&dstLocation, sizeof(dstLocation));
-                dstLocation.pResource = _paramHudless[frameIndex];
+                dstLocation.pResource = _paramHudless[frameIndex].resource;
                 dstLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
                 dstLocation.SubresourceIndex = 0; // paste into mip 0, array slice 0
 
@@ -177,7 +184,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
                 }
 
                 m_FrameGenerationConfig.HUDLessColor =
-                    ffxApiGetResourceDX12(_paramHudless[frameIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
+                    ffxApiGetResourceDX12(_paramHudless[frameIndex].resource, FFX_API_RESOURCE_STATE_COPY_DEST);
             }
         }
     }
@@ -338,12 +345,13 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
     ffxConfigureDescFrameGeneration m_FrameGenerationConfig = {};
     m_FrameGenerationConfig.header.type = FFX_API_CONFIGURE_DESC_TYPE_FRAMEGENERATION;
 
-    if (useHudless && _paramHudless[fIndex] != nullptr)
+    if (useHudless && _paramHudless[fIndex].resource != nullptr)
     {
-        LOG_TRACE("Using hudless: {:X}", (size_t) _paramHudless[fIndex]);
+        LOG_TRACE("Using hudless: {:X}", (size_t) _paramHudless[fIndex].resource);
+        auto state = 
         m_FrameGenerationConfig.HUDLessColor =
-            ffxApiGetResourceDX12(_paramHudless[fIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
-        _paramHudless[fIndex] = nullptr;
+            ffxApiGetResourceDX12(_paramHudless[fIndex].resource, _paramHudless[fIndex].getFfxApiState());
+        _paramHudless[fIndex] = {};
     }
     else
     {

@@ -2,6 +2,7 @@
 #include <Config.h>
 
 #include "fakenvapi.h"
+#include <magic_enum.hpp>
 
 // #define LOG_REFLEX_CALLS
 
@@ -45,6 +46,8 @@ NvAPI_Status ReflexHooks::hkNvAPI_D3D_SetLatencyMarker(IUnknown* pDev,
     LOG_FUNC();
 #endif
     _updatesWithoutMarker = 0;
+
+    LOG_DEBUG("frameID: {}, markerType: {}", pSetLatencyMarkerParams->frameID, magic_enum::enum_name(pSetLatencyMarkerParams->markerType));
 
     // Some games just stop sending any async markers when DLSSG is disabled, so a reset is needed
     if (_lastAsyncMarkerFrameId + 10 < pSetLatencyMarkerParams->frameID)

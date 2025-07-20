@@ -254,14 +254,23 @@ void IFGFeature_Dx12::SetHudless(ID3D12GraphicsCommandList* cmdList, ID3D12Resou
 
     if (cmdList == nullptr || !makeCopy)
     {
-        _paramHudless[index] = hudless;
+        _paramHudless[index].resource = hudless;
+        _paramHudless[index].setState(state);
         return;
     }
 
-    if (makeCopy && CopyResource(cmdList, hudless, &_paramHudlessCopy[index], state))
-        _paramHudless[index] = _paramHudlessCopy[index];
+    if (makeCopy && CopyResource(cmdList, hudless, &_paramHudlessCopy[index].resource, state))
+    {
+        _paramHudless[index].resource = _paramHudlessCopy[index].resource;
+        _paramHudless[index].setState(D3D12_RESOURCE_STATE_COPY_DEST);
+    }
     else
-        _paramHudless[index] = hudless;
+    {
+        _paramHudless[index].resource = hudless;
+        _paramHudless[index].setState(state);
+    }
+    
+    SetHudlessReady();
 }
 
 void IFGFeature_Dx12::CreateObjects(ID3D12Device* InDevice)
