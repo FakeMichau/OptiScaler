@@ -2521,14 +2521,11 @@ bool MenuCommon::RenderMenu()
 
                 constexpr auto fgOptionsCount = sizeof(fgOptions) / sizeof(char*);
 
-                if (!Config::Instance()->FGType.has_value())
-                    Config::Instance()->FGType =
-                        Config::Instance()->FGType.value_or_default(); // need to have a value before combo
+                if (!Config::Instance()->FGInput.has_value())
+                    Config::Instance()->FGInput =
+                        Config::Instance()->FGInput.value_or_default(); // need to have a value before combo
 
                 ImGui::SeparatorText("Frame Generation");
-
-                PopulateCombo("FG Type", reinterpret_cast<CustomOptional<uint32_t>*>(&Config::Instance()->FGType),
-                              fgOptions, fgDesc.data(), fgOptionsCount, disabledMask.data(), false);
 
                 if (State::Instance().showRestartWarning)
                 {
@@ -2538,13 +2535,14 @@ bool MenuCommon::RenderMenu()
                 }
 
                 State::Instance().showRestartWarning =
-                    State::Instance().activeFgType != Config::Instance()->FGType.value_or_default();
+                    State::Instance().activeFgInput != Config::Instance()->FGInput.value_or_default();
 
-                // OptiFG
-                if (Config::Instance()->OverlayMenu.value_or_default() && State::Instance().api == DX12 &&
-                    !State::Instance().isWorkingAsNvngx && State::Instance().activeFgType == FGType::OptiFG)
+                // FSR FG controls
+                if (State::Instance().activeFgOutput == FGOutput::FSRFG &&
+                    Config::Instance()->OverlayMenu.value_or_default() && !State::Instance().isWorkingAsNvngx &&
+                    State::Instance().api == DX12)
                 {
-                    ImGui::SeparatorText("Frame Generation (OptiFG)");
+                    ImGui::SeparatorText("Frame Generation (FSR FG)");
 
                     if (currentFeature != nullptr && !currentFeature->IsFrozen() && FfxApiProxy::InitFfxDx12())
                     {
@@ -2558,6 +2556,171 @@ bool MenuCommon::RenderMenu()
                                 State::Instance().FGchanged = true;
                         }
 
+                        ShowHelpMarker("Enable frame generation");
+
+                        bool fgAsync = Config::Instance()->FGAsync.value_or_default();
+                        if (ImGui::Checkbox("FG Allow Async", &fgAsync))
+                        {
+                            Config::Instance()->FGAsync = fgAsync;
+
+                            if (Config::Instance()->FGEnabled.value_or_default())
+                            {
+                                State::Instance().FGchanged = true;
+                                State::Instance().SCchanged = true;
+                                LOG_DEBUG("Async set FGChanged");
+                            }
+                        }
+                        ShowHelpMarker(
+                            "Enable Async for better FG performance\nMight cause crashes, especially with HUD Fix!");
+
+                        ImGui::SameLine(0.0f, 16.0f);
+
+                        bool fgDV = Config::Instance()->FGDebugView.value_or_default();
+                        if (ImGui::Checkbox("FG Debug View", &fgDV))
+                        {
+                            Config::Instance()->FGDebugView = fgDV;
+
+                            if (Config::Instance()->FGEnabled.value_or_default())
+                            {
+                                State::Instance().FGchanged = true;
+                                LOG_DEBUG("DebugView set FGChanged");
+                            }
+                        }
+                        ShowHelpMarker("Enable FSR 3.1 frame generation debug view");
+
+                        ImGui::Spacing();
+                        if (ImGui::CollapsingHeader("Advanced FSR FG Settings"))
+                        {
+                            ScopedIndent indent {};
+                            ImGui::Spacing();
+
+                            ImGui::Checkbox("FG Only Generated", &State::Instance().FGonlyGenerated);
+                            ShowHelpMarker("Display only FSR 3.1 generated frames");
+
+                            ImGui::Spacing();
+                            if (ImGui::TreeNode("FG Rectangle Settings"))
+                            {
+                                ImGui::PushItemWidth(95.0f * Config::Instance()->MenuScale.value_or_default());
+                                int rectLeft = Config::Instance()->FGRectLeft.value_or(0);
+                                if (ImGui::InputInt("Rect Left", &rectLeft))
+                                    Config::Instance()->FGRectLeft = rectLeft;
+
+                                ImGui::SameLine(0.0f, 16.0f);
+                                int rectTop = Config::Instance()->FGRectTop.value_or(0);
+                                if (ImGui::InputInt("Rect Top", &rectTop))
+                                    Config::Instance()->FGRectTop = rectTop;
+
+                                int rectWidth = Config::Instance()->FGRectWidth.value_or(0);
+                                if (ImGui::InputInt("Rect Width", &rectWidth))
+                                    Config::Instance()->FGRectWidth = rectWidth;
+
+                                ImGui::SameLine(0.0f, 16.0f);
+                                int rectHeight = Config::Instance()->FGRectHeight.value_or(0);
+                                if (ImGui::InputInt("Rect Height", &rectHeight))
+                                    Config::Instance()->FGRectHeight = rectHeight;
+
+                                ImGui::PopItemWidth();
+                                ShowHelpMarker("Frame generation rectangle, adjust for letterboxed content");
+
+                                ImGui::BeginDisabled(!Config::Instance()->FGRectLeft.has_value() &&
+                                                     !Config::Instance()->FGRectTop.has_value() &&
+                                                     !Config::Instance()->FGRectWidth.has_value() &&
+                                                     !Config::Instance()->FGRectHeight.has_value());
+
+                                if (ImGui::Button("Reset FG Rect"))
+                                {
+                                    Config::Instance()->FGRectLeft.reset();
+                                    Config::Instance()->FGRectTop.reset();
+                                    Config::Instance()->FGRectWidth.reset();
+                                    Config::Instance()->FGRectHeight.reset();
+                                }
+
+                                ShowHelpMarker("Resets frame generation rectangle");
+
+                                ImGui::EndDisabled();
+                                ImGui::TreePop();
+                            }
+
+                            FSRFG_Dx12* fsrFG = nullptr;
+                            if (State::Instance().currentFG != nullptr)
+                                fsrFG = reinterpret_cast<FSRFG_Dx12*>(State::Instance().currentFG);
+
+                            if (fsrFG != nullptr && FfxApiProxy::VersionDx12() >= feature_version { 3, 1, 3 })
+                            {
+                                ImGui::Spacing();
+                                if (ImGui::TreeNode("Frame Pacing Tuning"))
+                                {
+                                    auto fptEnabled = Config::Instance()->FGFramePacingTuning.value_or_default();
+                                    if (ImGui::Checkbox("Enable Tuning", &fptEnabled))
+                                    {
+                                        Config::Instance()->FGFramePacingTuning = fptEnabled;
+                                        State::Instance().FSRFGFTPchanged = true;
+                                    }
+
+                                    ImGui::BeginDisabled(!Config::Instance()->FGFramePacingTuning.value_or_default());
+
+                                    ImGui::PushItemWidth(115.0f * Config::Instance()->MenuScale.value_or_default());
+                                    auto fptSafetyMargin = Config::Instance()->FGFPTSafetyMarginInMs.value_or_default();
+                                    if (ImGui::InputFloat("Safety Margins in ms", &fptSafetyMargin, 0.01, 0.1, "%.2f"))
+                                        Config::Instance()->FGFPTSafetyMarginInMs = fptSafetyMargin;
+                                    ShowHelpMarker("Safety margins in millisecons\n"
+                                                   "FSR default value: 0.1ms\n"
+                                                   "Opti default value: 0.01ms");
+
+                                    auto fptVarianceFactor = Config::Instance()->FGFPTVarianceFactor.value_or_default();
+                                    if (ImGui::SliderFloat("Variance Factor", &fptVarianceFactor, 0.0f, 1.0f, "%.2f"))
+                                        Config::Instance()->FGFPTVarianceFactor = fptVarianceFactor;
+                                    ShowHelpMarker("Variance factor\n"
+                                                   "FSR default value: 0.1\n"
+                                                   "Opti default value: 0.3");
+                                    ImGui::PopItemWidth();
+
+                                    auto fpHybridSpin = Config::Instance()->FGFPTAllowHybridSpin.value_or_default();
+                                    if (ImGui::Checkbox("Enable Hybrid Spin", &fpHybridSpin))
+                                        Config::Instance()->FGFPTAllowHybridSpin = fpHybridSpin;
+                                    ShowHelpMarker("Allows pacing spinlock to sleep, should reduce CPU usage\n"
+                                                   "Might cause slow ramp up of FPS");
+
+                                    ImGui::PushItemWidth(115.0f * Config::Instance()->MenuScale.value_or_default());
+                                    auto fptHybridSpinTime = Config::Instance()->FGFPTHybridSpinTime.value_or_default();
+                                    if (ImGui::SliderInt("Hybrid Spin Time", &fptHybridSpinTime, 0, 100))
+                                        Config::Instance()->FGFPTHybridSpinTime = fptHybridSpinTime;
+                                    ShowHelpMarker("How long to spin if FPTHybridSpin is true. Measured in timer "
+                                                   "resolution units.\n"
+                                                   "Not recommended to go below 2. Will result in frequent overshoots");
+                                    ImGui::PopItemWidth();
+
+                                    auto fpWaitForSingleObjectOnFence =
+                                        Config::Instance()->FGFPTAllowWaitForSingleObjectOnFence.value_or_default();
+                                    if (ImGui::Checkbox("Enable WaitForSingleObjectOnFence",
+                                                        &fpWaitForSingleObjectOnFence))
+                                        Config::Instance()->FGFPTAllowWaitForSingleObjectOnFence =
+                                            fpWaitForSingleObjectOnFence;
+                                    ShowHelpMarker("Allows WaitForSingleObject instead of spinning for fence value");
+
+                                    if (ImGui::Button("Apply Timing Changes"))
+                                        State::Instance().FSRFGFTPchanged = true;
+
+                                    ImGui::EndDisabled();
+                                    ImGui::TreePop();
+                                }
+                            }
+
+                            ImGui::Spacing();
+                            ImGui::Spacing();
+                        }
+                    }
+                }
+
+                // OptiFG
+                // TODO: this needs to be separated into settings related to upscaler inputs and FSR FG output tweaks
+                if (Config::Instance()->OverlayMenu.value_or_default() && State::Instance().api == DX12 &&
+                    !State::Instance().isWorkingAsNvngx && State::Instance().activeFgInput == FGInput::Upscaler)
+                {
+                    ImGui::SeparatorText("Frame Generation (OptiFG)");
+
+                    if (currentFeature != nullptr && !currentFeature->IsFrozen() && FfxApiProxy::InitFfxDx12())
+                    {
                         ShowHelpMarker("Enable frame generation (OptiFG)");
 
                         bool fgHudfix = Config::Instance()->FGHUDFix.value_or_default();
@@ -2611,37 +2774,6 @@ bool MenuCommon::RenderMenu()
                         ImGui::PopItemWidth();
 
                         ImGui::EndDisabled();
-
-                        bool fgAsync = Config::Instance()->FGAsync.value_or_default();
-
-                        if (ImGui::Checkbox("FG Allow Async", &fgAsync))
-                        {
-                            Config::Instance()->FGAsync = fgAsync;
-
-                            if (Config::Instance()->FGEnabled.value_or_default())
-                            {
-                                State::Instance().FGchanged = true;
-                                State::Instance().SCchanged = true;
-                                LOG_DEBUG("Async set FGChanged");
-                            }
-                        }
-                        ShowHelpMarker(
-                            "Enable Async for better FG performance\nMight cause crashes, especially with HUD Fix!");
-
-                        ImGui::SameLine(0.0f, 16.0f);
-
-                        bool fgDV = Config::Instance()->FGDebugView.value_or_default();
-                        if (ImGui::Checkbox("FG Debug View", &fgDV))
-                        {
-                            Config::Instance()->FGDebugView = fgDV;
-
-                            if (Config::Instance()->FGEnabled.value_or_default())
-                            {
-                                State::Instance().FGchanged = true;
-                                LOG_DEBUG("DebugView set FGChanged");
-                            }
-                        }
-                        ShowHelpMarker("Enable FSR 3.1 frame generation debug view");
 
                         bool depthScale = Config::Instance()->FGEnableDepthScale.value_or_default();
                         if (ImGui::Checkbox("FG Scale Depth to fix DLSS RR", &depthScale))
@@ -2703,9 +2835,6 @@ bool MenuCommon::RenderMenu()
                         {
                             ScopedIndent indent {};
                             ImGui::Spacing();
-
-                            ImGui::Checkbox("FG Only Generated", &State::Instance().FGonlyGenerated);
-                            ShowHelpMarker("Display only FSR 3.1 generated frames");
 
                             auto rb = Config::Instance()->FGResourceBlocking.value_or_default();
                             if (ImGui::Checkbox("Resource Blocking", &rb))
@@ -2841,115 +2970,6 @@ bool MenuCommon::RenderMenu()
                             }
 
                             ImGui::Spacing();
-                            if (ImGui::TreeNode("FG Rectangle Settings"))
-                            {
-                                ImGui::PushItemWidth(95.0f * Config::Instance()->MenuScale.value_or_default());
-                                int rectLeft = Config::Instance()->FGRectLeft.value_or(0);
-                                if (ImGui::InputInt("Rect Left", &rectLeft))
-                                    Config::Instance()->FGRectLeft = rectLeft;
-
-                                ImGui::SameLine(0.0f, 16.0f);
-                                int rectTop = Config::Instance()->FGRectTop.value_or(0);
-                                if (ImGui::InputInt("Rect Top", &rectTop))
-                                    Config::Instance()->FGRectTop = rectTop;
-
-                                int rectWidth = Config::Instance()->FGRectWidth.value_or(0);
-                                if (ImGui::InputInt("Rect Width", &rectWidth))
-                                    Config::Instance()->FGRectWidth = rectWidth;
-
-                                ImGui::SameLine(0.0f, 16.0f);
-                                int rectHeight = Config::Instance()->FGRectHeight.value_or(0);
-                                if (ImGui::InputInt("Rect Height", &rectHeight))
-                                    Config::Instance()->FGRectHeight = rectHeight;
-
-                                ImGui::PopItemWidth();
-                                ShowHelpMarker("Frame generation rectangle, adjust for letterboxed content");
-
-                                ImGui::BeginDisabled(!Config::Instance()->FGRectLeft.has_value() &&
-                                                     !Config::Instance()->FGRectTop.has_value() &&
-                                                     !Config::Instance()->FGRectWidth.has_value() &&
-                                                     !Config::Instance()->FGRectHeight.has_value());
-
-                                if (ImGui::Button("Reset FG Rect"))
-                                {
-                                    Config::Instance()->FGRectLeft.reset();
-                                    Config::Instance()->FGRectTop.reset();
-                                    Config::Instance()->FGRectWidth.reset();
-                                    Config::Instance()->FGRectHeight.reset();
-                                }
-
-                                ShowHelpMarker("Resets frame generation rectangle");
-
-                                ImGui::EndDisabled();
-                                ImGui::TreePop();
-                            }
-
-                            FSRFG_Dx12* fsrFG = nullptr;
-                            if (State::Instance().currentFG != nullptr)
-                                fsrFG = reinterpret_cast<FSRFG_Dx12*>(State::Instance().currentFG);
-
-                            if (fsrFG != nullptr && FfxApiProxy::VersionDx12() >= feature_version { 3, 1, 3 })
-                            {
-                                ImGui::Spacing();
-                                if (ImGui::TreeNode("Frame Pacing Tuning"))
-                                {
-                                    auto fptEnabled = Config::Instance()->FGFramePacingTuning.value_or_default();
-                                    if (ImGui::Checkbox("Enable Tuning", &fptEnabled))
-                                    {
-                                        Config::Instance()->FGFramePacingTuning = fptEnabled;
-                                        State::Instance().FSRFGFTPchanged = true;
-                                    }
-
-                                    ImGui::BeginDisabled(!Config::Instance()->FGFramePacingTuning.value_or_default());
-
-                                    ImGui::PushItemWidth(115.0f * Config::Instance()->MenuScale.value_or_default());
-                                    auto fptSafetyMargin = Config::Instance()->FGFPTSafetyMarginInMs.value_or_default();
-                                    if (ImGui::InputFloat("Safety Margins in ms", &fptSafetyMargin, 0.01, 0.1, "%.2f"))
-                                        Config::Instance()->FGFPTSafetyMarginInMs = fptSafetyMargin;
-                                    ShowHelpMarker("Safety margins in millisecons\n"
-                                                   "FSR default value: 0.1ms\n"
-                                                   "Opti default value: 0.01ms");
-
-                                    auto fptVarianceFactor = Config::Instance()->FGFPTVarianceFactor.value_or_default();
-                                    if (ImGui::SliderFloat("Variance Factor", &fptVarianceFactor, 0.0f, 1.0f, "%.2f"))
-                                        Config::Instance()->FGFPTVarianceFactor = fptVarianceFactor;
-                                    ShowHelpMarker("Variance factor\n"
-                                                   "FSR default value: 0.1\n"
-                                                   "Opti default value: 0.3");
-                                    ImGui::PopItemWidth();
-
-                                    auto fpHybridSpin = Config::Instance()->FGFPTAllowHybridSpin.value_or_default();
-                                    if (ImGui::Checkbox("Enable Hybrid Spin", &fpHybridSpin))
-                                        Config::Instance()->FGFPTAllowHybridSpin = fpHybridSpin;
-                                    ShowHelpMarker("Allows pacing spinlock to sleep, should reduce CPU usage\n"
-                                                   "Might cause slow ramp up of FPS");
-
-                                    ImGui::PushItemWidth(115.0f * Config::Instance()->MenuScale.value_or_default());
-                                    auto fptHybridSpinTime = Config::Instance()->FGFPTHybridSpinTime.value_or_default();
-                                    if (ImGui::SliderInt("Hybrid Spin Time", &fptHybridSpinTime, 0, 100))
-                                        Config::Instance()->FGFPTHybridSpinTime = fptHybridSpinTime;
-                                    ShowHelpMarker("How long to spin if FPTHybridSpin is true. Measured in timer "
-                                                   "resolution units.\n"
-                                                   "Not recommended to go below 2. Will result in frequent overshoots");
-                                    ImGui::PopItemWidth();
-
-                                    auto fpWaitForSingleObjectOnFence =
-                                        Config::Instance()->FGFPTAllowWaitForSingleObjectOnFence.value_or_default();
-                                    if (ImGui::Checkbox("Enable WaitForSingleObjectOnFence",
-                                                        &fpWaitForSingleObjectOnFence))
-                                        Config::Instance()->FGFPTAllowWaitForSingleObjectOnFence =
-                                            fpWaitForSingleObjectOnFence;
-                                    ShowHelpMarker("Allows WaitForSingleObject instead of spinning for fence value");
-
-                                    if (ImGui::Button("Apply Timing Changes"))
-                                        State::Instance().FSRFGFTPchanged = true;
-
-                                    ImGui::EndDisabled();
-                                    ImGui::TreePop();
-                                }
-                            }
-
-                            ImGui::Spacing();
                             ImGui::Spacing();
                         }
                     }
@@ -2966,7 +2986,8 @@ bool MenuCommon::RenderMenu()
 
                 // DLSSG Mod
                 if (State::Instance().api != DX11 && !State::Instance().isWorkingAsNvngx &&
-                    State::Instance().activeFgType == FGType::Nukems)
+                    State::Instance().activeFgInput == FGInput::Nukems &&
+                    State::Instance().activeFgOutput == FGOutput::Nukems)
                 {
                     SeparatorWithHelpMarker("Frame Generation (FSR-FG via Nukem's DLSSG)",
                                             "Requires Nukem's dlssg_to_fsr3 dll\nSelect DLSS FG in-game");
@@ -3035,7 +3056,7 @@ bool MenuCommon::RenderMenu()
                 {
                     // FSR Common -----------------
                     if (currentFeature != nullptr && !currentFeature->IsFrozen() &&
-                        (State::Instance().activeFgType == FGType::OptiFG || currentBackend.rfind("fsr", 0) == 0))
+                        (State::Instance().activeFgOutput == FGOutput::FSRFG || currentBackend.rfind("fsr", 0) == 0))
                     {
                         SeparatorWithHelpMarker("FSR Common Settings", "Affects both FSR-FG & Upscalers");
 
@@ -3277,7 +3298,7 @@ bool MenuCommon::RenderMenu()
                                 currentMethod = "Vulkan AntiLag";
 
                             if (State::Instance().rtssReflexInjection && mode == Mode::AntiLag2 &&
-                                Config::Instance()->FGType == OptiFG)
+                                Config::Instance()->FGInput == FGInput::Upscaler)
                                 ImGui::TextColored(
                                     ImVec4(1.f, 0.8f, 0.f, 1.f),
                                     "Using RTSS Reflex injection with AntiLag 2 and OptiFG might cause issues");

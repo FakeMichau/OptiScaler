@@ -998,7 +998,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_GetFeatureRequirements(
     DLSSGMod::InitDLSSGMod_Dx12();
 
     if (FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_SuperSampling ||
-        ((DLSSGMod::isDx12Available() || Config::Instance()->FGType == FGType::OptiFG) &&
+        ((DLSSGMod::isDx12Available() || Config::Instance()->FGInput == FGInput::DLSSG) &&
          FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_FrameGeneration))
     {
         if (OutSupported == nullptr)
@@ -1485,7 +1485,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         fg = State::Instance().currentFG;
 
     // FG Init || Disable
-    if (State::Instance().activeFgType == OptiFG && Config::Instance()->OverlayMenu.value_or_default())
+    if (fg != nullptr && State::Instance().activeFgOutput == FGOutput::FSRFG && Config::Instance()->OverlayMenu.value_or_default())
     {
         if (!State::Instance().FGchanged && Config::Instance()->FGEnabled.value_or_default() &&
             fg->TargetFrame() < fg->FrameCount() && FfxApiProxy::InitFfxDx12() && !fg->IsActive() &&
@@ -1593,7 +1593,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
 
     UINT frameIndex;
     if (!State::Instance().isShuttingDown && fg != nullptr && fg->IsActive() &&
-        State::Instance().activeFgType == OptiFG && Config::Instance()->OverlayMenu.value_or_default() &&
+        State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->OverlayMenu.value_or_default() &&
         Config::Instance()->FGEnabled.value_or_default() && fg->TargetFrame() < fg->FrameCount() &&
         State::Instance().currentSwapchain != nullptr)
     {
@@ -1698,15 +1698,16 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         InCmdList->ResolveQueryData(HooksDx::queryHeap, D3D12_QUERY_TYPE_TIMESTAMP, 0, 2, HooksDx::readbackBuffer, 0);
     }
 
-    NVSDK_NGX_Result methodResult = NVSDK_NGX_Result_Fail;
+    NVSDK_NGX_Result methodResult = evalResult ? NVSDK_NGX_Result_Success : NVSDK_NGX_Result_Fail;
 
     // FG Dispatch
-    if (evalResult)
+    if (evalResult && State::Instance().activeFgInput == FGInput::Upscaler)
     {
         HooksDx::dx12UpscaleTrig = true;
 
         // FG Dispatch
-        if (fg != nullptr && fg->IsActive() && State::Instance().activeFgType == OptiFG &&
+        if (fg != nullptr && fg->IsActive() &&
+            State::Instance().activeFgOutput == FGOutput::FSRFG &&
             Config::Instance()->OverlayMenu.value_or_default() && Config::Instance()->FGEnabled.value_or_default() &&
             fg->TargetFrame() < fg->FrameCount() && State::Instance().currentSwapchain != nullptr)
         {
@@ -1742,8 +1743,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                 fg->Dispatch(InCmdList, output, State::Instance().lastFrameTime);
             }
         }
-
-        methodResult = NVSDK_NGX_Result_Success;
     }
 
     // Root signature restore

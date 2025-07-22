@@ -347,7 +347,8 @@ class Config
     CustomOptional<bool> LoadAsiPlugins { false };
 
     // Frame Generation
-    CustomOptional<FGType> FGType { FGType::NoFG };
+    CustomOptional<FGInput> FGInput { FGInput::NoFG };
+    CustomOptional<FGOutput> FGOutput { FGOutput::NoFG };
 
     // OptiFG
     CustomOptional<bool> FGEnabled { false };

@@ -730,7 +730,7 @@ void ResTrack_Dx12::hkExecuteCommandLists(ID3D12CommandQueue* This, UINT NumComm
 {
     // static std::mutex cmdListMutex;
 
-    // if (State::Instance().activeFgType == OptiFG && State::Instance().currentFG != nullptr &&
+    // if (State::Instance().activeFgInput == OptiFG && State::Instance().currentFG != nullptr &&
     //     (_upscalerCommandList != nullptr /*|| _commandList != nullptr*/))
     //{
     //     IFGFeature_Dx12* fg = State::Instance().currentFG;
@@ -1570,7 +1570,7 @@ void ResTrack_Dx12::hkClose(ID3D12GraphicsCommandList* This)
 
     // LOG_TRACE("index: {}, cmdList: {:X}", index, (size_t) This);
 
-    if (State::Instance().activeFgType == OptiFG && fg != nullptr &&
+    if (State::Instance().activeFgInput == FGInput::Upscaler && fg != nullptr &&
         (_upscalerCommandList[index] != nullptr || _commandList[index] != nullptr))
     {
 
@@ -1820,7 +1820,7 @@ void ResTrack_Dx12::HookToQueue(ID3D12Device* InDevice)
 
 void ResTrack_Dx12::HookDevice(ID3D12Device* device)
 {
-    if (State::Instance().activeFgType != OptiFG || !Config::Instance()->OverlayMenu.value_or_default())
+    if (State::Instance().activeFgInput != FGInput::Upscaler || !Config::Instance()->OverlayMenu.value_or_default())
         return;
 
     if (o_CreateDescriptorHeap != nullptr || device == nullptr)

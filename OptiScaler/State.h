@@ -17,12 +17,24 @@ typedef enum API
     Vulkan,
 } API;
 
-typedef enum FGType : uint32_t
+enum class FGInput : uint32_t
 {
     NoFG,
-    OptiFG,
-    Nukems
-} FGType;
+    Nukems,
+    FSRFG,
+    DLSSG, // technically Streamline inputs
+    XeFG,
+    Upscaler // OptiFG
+};
+
+enum class FGOutput : uint32_t
+{
+    NoFG,
+    Nukems,
+    FSRFG,
+    DLSSG,
+    XeFG
+};
 
 class State
 {
@@ -57,7 +69,10 @@ class State
     float lastFsrCameraFar = 0.0f;
 
     // Frame Generation
-    FGType activeFgType = FGType::NoFG;
+    //FGInput desiredFgInput = FGInput::NoFG;
+    //FGOutput desiredFgOutput = FGOutput::NoFG;
+    FGInput activeFgInput = FGInput::NoFG;
+    FGOutput activeFgOutput = FGOutput::NoFG;
 
     // OptiFG
     bool FGonlyGenerated = false;

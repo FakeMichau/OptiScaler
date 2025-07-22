@@ -280,7 +280,7 @@ ffxReturnCode_t ffxCreateContext_Dx12(ffxContext* context, ffxCreateContextDescH
             auto backendDesc = (ffxCreateBackendDX12Desc*) header;
             _d3d12Device = backendDesc->device;
         }
-        else if (State::Instance().activeFgType == OptiFG)
+        else if (State::Instance().activeFgOutput == FGOutput::FSRFG)
         {
             if (header->type == FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATIONSWAPCHAIN_WRAP_DX12)
             {
@@ -289,7 +289,7 @@ ffxReturnCode_t ffxCreateContext_Dx12(ffxContext* context, ffxCreateContextDescH
             }
             else if (header->type == FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATIONSWAPCHAIN_NEW_DX12)
             {
-                LOG_INFO("Creating OptiFG swapchain, new swapchain");
+                LOG_INFO("Creating FSR FG swapchain, new swapchain");
                 auto fgDesc = (ffxCreateContextDescFrameGenerationSwapChainNewDX12*) header;
                 auto scResult = fgDesc->dxgiFactory->CreateSwapChain(fgDesc->gameQueue, fgDesc->desc,
                                                                      (IDXGISwapChain**) fgDesc->swapchain);
@@ -315,7 +315,7 @@ ffxReturnCode_t ffxCreateContext_Dx12(ffxContext* context, ffxCreateContextDescH
             }
             else if (header->type == FFX_API_CREATE_CONTEXT_DESC_TYPE_FRAMEGENERATIONSWAPCHAIN_FOR_HWND_DX12)
             {
-                LOG_INFO("Creating OptiFG swapchain, new swapchain for hwnd");
+                LOG_INFO("Creating FSR FG swapchain, new swapchain for hwnd");
                 auto fgDesc = (ffxCreateContextDescFrameGenerationSwapChainForHwndDX12*) header;
 
                 IDXGIFactory2* factory = nullptr;
@@ -456,7 +456,7 @@ ffxReturnCode_t ffxDestroyContext_Dx12(ffxContext* context, const ffxAllocationC
 
     if (!State::Instance().isShuttingDown &&
         (!upscalerContext || Config::Instance()->EnableHotSwapping.value_or_default()) &&
-        (State::Instance().activeFgType != OptiFG || State::Instance().currentFG == nullptr ||
+        (State::Instance().activeFgOutput != FGOutput::FSRFG || State::Instance().currentFG == nullptr ||
          State::Instance().currentFG->SwapchainContext() != (*context)))
     {
         auto cdResult = FfxApiProxy::D3D12_DestroyContext()(context, memCb);

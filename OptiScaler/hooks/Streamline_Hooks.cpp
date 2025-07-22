@@ -46,7 +46,7 @@ char* StreamlineHooks::trimStreamlineLog(const char* msg)
 {
     int bracket_count = 0;
 
-    char* result = (char*) malloc(strlen(msg) + 1);
+    char* result = (char*)malloc(strlen(msg) + 1);
     if (!result)
         return NULL;
 
@@ -98,27 +98,33 @@ sl::Result StreamlineHooks::hkslInit(sl::Preferences* pref, uint64_t sdkVersion)
 }
 
 sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::ResourceTag* tags, uint32_t numTags,
-                                       sl::CommandBuffer* cmdBuffer)
+    sl::CommandBuffer* cmdBuffer)
 {
     for (uint32_t i = 0; i < numTags; i++)
     {
-        if (State::Instance().gameQuirks & GameQuirk::CyberpunkHudlessStateOverride && tags[i].type == 2 &&
-            tags[i].resource->state ==
-                (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE))
+        if (tags[i].type == sl::kBufferTypeHUDLessColor)
         {
-            tags[i].resource->state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-            LOG_TRACE("Changing hudless resource state");
-        }
-        else if (tags[i].type == sl::kBufferTypeHUDLessColor)
-        {
-            auto hudlessResource = tags[i].resource->native;
+            // Cyberpunk hudless state fix for RDNA 2
+            if (State::Instance().gameQuirks & GameQuirk::CyberpunkHudlessStateOverride &&
+                tags[i].resource->state ==
+                (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)) 
+            {
+                tags[i].resource->state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+                LOG_TRACE("Changing hudless resource state");
+            }
 
-            auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
-            if (fg != nullptr)
-                fg->SetHudless((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) hudlessResource,
-                               (D3D12_RESOURCE_STATES) tags[i].resource->state, tags[i].lifecycle == sl::eOnlyValidNow);
+            if (State::Instance().activeFgInput == FGInput::DLSSG)
+            {
+                auto hudlessResource = tags[i].resource->native;
 
-            LOG_TRACE("HUDLESS set");
+                auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
+                if (fg != nullptr)
+                    fg->SetHudless((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) hudlessResource,
+                                   (D3D12_RESOURCE_STATES) tags[i].resource->state,
+                                   tags[i].lifecycle == sl::eOnlyValidNow);
+
+                LOG_TRACE("HUDLESS set");
+            }
         }
     }
     auto result = o_slSetTag(viewport, tags, numTags, cmdBuffer);
@@ -279,12 +285,16 @@ bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSO
     // TODO: do it better than "static" and hoping for the best
     static std::string config;
 
-    if (Config::Instance()->StreamlineSpoofing.value_or_default() && Config::Instance()->FGType == FGType::NoFG)
+    bool skipArchSpoof =
+        Config::Instance()->StreamlineSpoofing.value_or_default() &&
+        (Config::Instance()->FGInput != FGInput::Nukems || Config::Instance()->FGInput != FGInput::DLSSG);
+
+    if (skipArchSpoof)
         setSystemCapsArch((sl::param::IParameters*) params, 0);
 
     auto result = o_dlssg_slOnPluginLoad(params, loaderJSON, pluginJSON);
 
-    if (Config::Instance()->StreamlineSpoofing.value_or_default() && Config::Instance()->FGType == FGType::NoFG)
+    if (skipArchSpoof)
         setSystemCapsArch((sl::param::IParameters*) params, UINT_MAX);
 
     nlohmann::json configJson = nlohmann::json::parse(*pluginJSON);
@@ -614,7 +624,8 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
                 DetourTransactionBegin();
                 DetourUpdateThread(GetCurrentThread());
 
-                if (Config::Instance()->FGType.value_or_default() != FGType::NoFG)
+                if (Config::Instance()->FGInput.value_or_default() == FGInput::Nukems ||
+                    Config::Instance()->FGInput.value_or_default() == FGInput::DLSSG)
                     DetourAttach(&(PVOID&) o_slSetTag, hkslSetTag);
 
                 DetourAttach(&(PVOID&) o_slInit, hkslInit);
