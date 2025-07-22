@@ -1641,7 +1641,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         if (InParameters->Get(NVSDK_NGX_Parameter_Depth, &paramDepth) != NVSDK_NGX_Result_Success)
             InParameters->Get(NVSDK_NGX_Parameter_Depth, (void**) &paramDepth);
 
-        if (paramDepth != nullptr)
+        if (paramDepth != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
         {
             auto done = false;
 

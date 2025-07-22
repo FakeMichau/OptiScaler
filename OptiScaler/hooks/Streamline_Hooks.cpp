@@ -97,9 +97,16 @@ sl::Result StreamlineHooks::hkslInit(sl::Preferences* pref, uint64_t sdkVersion)
     return o_slInit(*pref, sdkVersion);
 }
 
+// TODO: add support for slSetTagForFrame
+// TODO: check api - dx12/vk
 sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::ResourceTag* tags, uint32_t numTags,
     sl::CommandBuffer* cmdBuffer)
 {
+    IFGFeature_Dx12* fg = nullptr;
+
+    if (State::Instance().activeFgInput == FGInput::DLSSG)
+        fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
+
     for (uint32_t i = 0; i < numTags; i++)
     {
         if (tags[i].type == sl::kBufferTypeHUDLessColor)
@@ -113,19 +120,61 @@ sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::Resourc
                 LOG_TRACE("Changing hudless resource state");
             }
 
-            if (State::Instance().activeFgInput == FGInput::DLSSG)
+            if (fg != nullptr)
             {
                 auto hudlessResource = tags[i].resource->native;
 
-                auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
-                if (fg != nullptr)
-                    fg->SetHudless((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) hudlessResource,
-                                   (D3D12_RESOURCE_STATES) tags[i].resource->state,
-                                   tags[i].lifecycle == sl::eOnlyValidNow);
+                fg->SetHudless((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) hudlessResource,
+                                (D3D12_RESOURCE_STATES) tags[i].resource->state,
+                                tags[i].lifecycle == sl::eOnlyValidNow);
 
                 LOG_TRACE("HUDLESS set");
+
+                // TODO: Hudless being set last is an assumption, might not always be the case, find better dispatch point
+                fg->Dispatch((ID3D12GraphicsCommandList*) cmdBuffer, nullptr, State::Instance().lastFrameTime);
             }
         }
+
+        if (tags[i].type == sl::kBufferTypeDepth || tags[i].type == sl::kBufferTypeHiResDepth ||
+            tags[i].type == sl::kBufferTypeLinearDepth)
+        {
+            if (fg != nullptr)
+            {
+                auto depthResource = tags[i].resource->native;
+
+                Config::Instance()->FGMakeDepthCopy.set_volatile_value(tags[i].lifecycle == sl::eOnlyValidNow);
+                //Config::Instance()->FGMakeDepthCopy.set_volatile_value(false);
+
+                fg->SetDepth((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) depthResource,
+                                (D3D12_RESOURCE_STATES) tags[i].resource->state);      
+
+                LOG_TRACE("DEPTH set");
+            }
+        }
+
+        if (tags[i].type == sl::kBufferTypeMotionVectors)
+        {
+            if (fg != nullptr)
+            {
+                auto mvResource = tags[i].resource->native;
+
+                auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
+
+                Config::Instance()->FGMakeMVCopy.set_volatile_value(tags[i].lifecycle == sl::eOnlyValidNow);
+                //Config::Instance()->FGMakeMVCopy.set_volatile_value(false);
+
+                fg->SetVelocity((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) mvResource,
+                                (D3D12_RESOURCE_STATES) tags[i].resource->state);
+
+                LOG_TRACE("VELOCITY set");
+            }
+        }
+
+        // TODO: any use for kBufferTypeUIColorAndAlpha ???
+
+        //fg->SetCameraValues(cameraNear, cameraFar, cameraVFov, meterFactor);
+        //fg->SetFrameTimeDelta(State::Instance().lastFrameTime);
+        //fg->SetMVScale(mvScaleX, mvScaleY);
     }
     auto result = o_slSetTag(viewport, tags, numTags, cmdBuffer);
     return result;
@@ -299,8 +348,12 @@ bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSO
 
     nlohmann::json configJson = nlohmann::json::parse(*pluginJSON);
 
-    configJson["hooks"].clear();
-    configJson["exclusive_hooks"].clear();
+    // Kill the DLSSG streamline swapchain hooks
+    if (State::Instance().activeFgInput == FGInput::DLSSG)
+    {
+        configJson["hooks"].clear();
+        configJson["exclusive_hooks"].clear();
+    }
 
     if (Config::Instance()->VulkanExtensionSpoofing.value_or_default())
     {
@@ -401,6 +454,11 @@ void* StreamlineHooks::hkdlssg_slGetPluginFunction(const char* functionName)
     {
         o_slDLSSGSetOptions = (decltype(&slDLSSGSetOptions)) o_dlssg_slGetPluginFunction(functionName);
         return &hkslDLSSGSetOptions;
+    }
+
+    if (strcmp(functionName, "slAllocateResources") == 0)
+    {
+        LOG_DEBUG("Fun");
     }
 
     return o_dlssg_slGetPluginFunction(functionName);

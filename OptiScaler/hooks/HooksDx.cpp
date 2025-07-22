@@ -300,7 +300,7 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
         }
     }
 
-    if (willPresent)
+    if (willPresent && State::Instance().activeFgInput == FGInput::Upscaler)
     {
         ResTrack_Dx12::ClearPossibleHudless();
         Hudfix_Dx12::PresentStart();
@@ -857,7 +857,7 @@ static HRESULT hkCreateSwapChain(IDXGIFactory* pFactory, IUnknown* pDevice, DXGI
     }
 
     ID3D12CommandQueue* cq = nullptr;
-    if (Config::Instance()->OverlayMenu.value_or_default() && State::Instance().activeFgInput == FGInput::Upscaler &&
+    if (Config::Instance()->OverlayMenu.value_or_default() && State::Instance().activeFgOutput == FGOutput::FSRFG &&
         !_skipFGSwapChainCreation && FfxApiProxy::InitFfxDx12() && pDevice->QueryInterface(IID_PPV_ARGS(&cq)) == S_OK)
     {
         cq->SetName(L"GameQueue");
@@ -1141,7 +1141,8 @@ static HRESULT hkCreateSwapChainForHwnd(IDXGIFactory* This, IUnknown* pDevice, H
     }
 
     ID3D12CommandQueue* cq = nullptr;
-    if (State::Instance().activeFgInput == FGInput::Upscaler && !_skipFGSwapChainCreation && FfxApiProxy::InitFfxDx12() &&
+    if (State::Instance().activeFgOutput == FGOutput::FSRFG && !_skipFGSwapChainCreation &&
+        FfxApiProxy::InitFfxDx12() &&
         pDevice->QueryInterface(IID_PPV_ARGS(&cq)) == S_OK)
     {
         cq->SetName(L"GameQueueHwnd");

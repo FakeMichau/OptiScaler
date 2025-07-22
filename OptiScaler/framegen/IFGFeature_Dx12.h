@@ -68,10 +68,10 @@ class IFGFeature_Dx12 : public virtual IFGFeature
     bool _hudlessReady[BUFFER_COUNT] = { false, false, false, false };
     bool _hudlessDispatchReady[BUFFER_COUNT] = { false, false, false, false };
 
-    ID3D12Resource* _paramVelocity[BUFFER_COUNT] = { nullptr, nullptr, nullptr, nullptr };
-    ID3D12Resource* _paramVelocityCopy[BUFFER_COUNT] = { nullptr, nullptr, nullptr, nullptr };
-    ID3D12Resource* _paramDepth[BUFFER_COUNT] = { nullptr, nullptr, nullptr, nullptr };
-    ID3D12Resource* _paramDepthCopy[BUFFER_COUNT] = { nullptr, nullptr, nullptr, nullptr };
+    Dx12Resource _paramVelocity[BUFFER_COUNT] = {};
+    Dx12Resource _paramVelocityCopy[BUFFER_COUNT] = {};
+    Dx12Resource _paramDepth[BUFFER_COUNT] = {};
+    Dx12Resource _paramDepthCopy[BUFFER_COUNT] = {};
     Dx12Resource _paramHudless[BUFFER_COUNT] {};
     Dx12Resource _paramHudlessCopy[BUFFER_COUNT] {};
 

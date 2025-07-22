@@ -61,7 +61,7 @@ bool IFGFeature_Dx12::CreateBufferResourceWithSize(ID3D12Device* device, ID3D12R
     return true;
 }
 
-bool IFGFeature_Dx12::CreateBufferResource(ID3D12Device* device, ID3D12Resource* source, D3D12_RESOURCE_STATES state,
+bool IFGFeature_Dx12::CreateBufferResource(ID3D12Device* device, ID3D12Resource* source, D3D12_RESOURCE_STATES initialState,
                                            ID3D12Resource** target, bool UAV, bool depth)
 {
     if (device == nullptr || source == nullptr)
@@ -101,7 +101,7 @@ bool IFGFeature_Dx12::CreateBufferResource(ID3D12Device* device, ID3D12Resource*
         return false;
     }
 
-    hr = device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &inDesc, state, nullptr,
+    hr = device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &inDesc, initialState, nullptr,
                                          IID_PPV_ARGS(target));
 
     if (hr != S_OK)
@@ -152,10 +152,13 @@ void IFGFeature_Dx12::SetVelocity(ID3D12GraphicsCommandList* cmdList, ID3D12Reso
     if (cmdList == nullptr)
         return;
 
-    _paramVelocity[index] = velocity;
+    _paramVelocity[index].resource = velocity;
+    _paramVelocity[index].setState(state);
+
+    _paramVelocityCopy[index].setState(D3D12_RESOURCE_STATE_COPY_DEST);
 
     if (Config::Instance()->FGResourceFlip.value_or_default() && _device != nullptr &&
-        CreateBufferResource(_device, velocity, D3D12_RESOURCE_STATE_COPY_DEST, &_paramVelocityCopy[index], true,
+        CreateBufferResource(_device, velocity, D3D12_RESOURCE_STATE_COPY_DEST, &_paramVelocityCopy[index].resource, true,
                              false))
     {
         if (_mvFlip.get() == nullptr)
@@ -166,16 +169,17 @@ void IFGFeature_Dx12::SetVelocity(ID3D12GraphicsCommandList* cmdList, ID3D12Reso
 
         if (_mvFlip->IsInit())
         {
-            ResourceBarrier(cmdList, _paramVelocityCopy[index], D3D12_RESOURCE_STATE_COPY_DEST,
+            ResourceBarrier(cmdList, _paramVelocityCopy[index].resource, _paramVelocityCopy->getState(),
                             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
             auto feature = State::Instance().currentFeature;
             UINT width = feature->LowResMV() ? feature->RenderWidth() : feature->DisplayWidth();
             UINT height = feature->LowResMV() ? feature->RenderHeight() : feature->DisplayHeight();
-            auto result = _mvFlip->Dispatch(_device, cmdList, velocity, _paramVelocityCopy[index], width, height, true);
+            auto result =
+                _mvFlip->Dispatch(_device, cmdList, velocity, _paramVelocityCopy[index].resource, width, height, true);
 
-            ResourceBarrier(cmdList, _paramVelocityCopy[index], D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                            D3D12_RESOURCE_STATE_COPY_DEST);
+            ResourceBarrier(cmdList, _paramVelocityCopy[index].resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                            _paramVelocityCopy->getState());
 
             if (result)
             {
@@ -188,7 +192,7 @@ void IFGFeature_Dx12::SetVelocity(ID3D12GraphicsCommandList* cmdList, ID3D12Reso
     }
 
     if (Config::Instance()->FGMakeMVCopy.value_or_default() &&
-        CopyResource(cmdList, velocity, &_paramVelocityCopy[index], state))
+        CopyResource(cmdList, velocity, &_paramVelocityCopy[index].resource, _paramVelocity->getState()))
     {
         LOG_TRACE("Setting velocity, index: {}", index);
         _paramVelocity[index] = _paramVelocityCopy[index];
@@ -203,11 +207,15 @@ void IFGFeature_Dx12::SetDepth(ID3D12GraphicsCommandList* cmdList, ID3D12Resourc
     if (cmdList == nullptr)
         return;
 
-    _paramDepth[index] = depth;
+    _paramDepth[index].resource = depth;
+    _paramDepth[index].setState(state);
+
+    _paramDepthCopy[index].setState(D3D12_RESOURCE_STATE_COPY_DEST);
 
     if (Config::Instance()->FGResourceFlip.value_or_default() && _device != nullptr)
     {
-        if (!CreateBufferResource(_device, depth, D3D12_RESOURCE_STATE_COPY_DEST, &_paramDepthCopy[index], true, true))
+        if (!CreateBufferResource(_device, depth, D3D12_RESOURCE_STATE_COPY_DEST, &_paramDepthCopy[index].resource,
+                                  true, true))
             return;
 
         if (_depthFlip.get() == nullptr)
@@ -218,15 +226,15 @@ void IFGFeature_Dx12::SetDepth(ID3D12GraphicsCommandList* cmdList, ID3D12Resourc
 
         if (_depthFlip->IsInit())
         {
-            ResourceBarrier(cmdList, _paramDepthCopy[index], D3D12_RESOURCE_STATE_COPY_DEST,
+            ResourceBarrier(cmdList, _paramDepthCopy[index].resource, _paramDepthCopy[index].getState(),
                             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
             auto feature = State::Instance().currentFeature;
-            auto result = _depthFlip->Dispatch(_device, cmdList, depth, _paramDepthCopy[index], feature->RenderWidth(),
-                                               feature->RenderHeight(), false);
+            auto result = _depthFlip->Dispatch(_device, cmdList, depth, _paramDepthCopy[index].resource,
+                                               feature->RenderWidth(), feature->RenderHeight(), false);
 
-            ResourceBarrier(cmdList, _paramDepthCopy[index], D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                            D3D12_RESOURCE_STATE_COPY_DEST);
+            ResourceBarrier(cmdList, _paramDepthCopy[index].resource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                            _paramDepthCopy[index].getState());
 
             if (result)
             {
@@ -239,7 +247,7 @@ void IFGFeature_Dx12::SetDepth(ID3D12GraphicsCommandList* cmdList, ID3D12Resourc
     }
 
     if (Config::Instance()->FGMakeDepthCopy.value_or_default() &&
-        CopyResource(cmdList, depth, &_paramDepthCopy[index], state))
+        CopyResource(cmdList, depth, &_paramDepthCopy[index].resource, _paramDepth[index].getState()))
     {
         LOG_TRACE("Setting depth, index: {}", index);
         _paramDepth[index] = _paramDepthCopy[index];

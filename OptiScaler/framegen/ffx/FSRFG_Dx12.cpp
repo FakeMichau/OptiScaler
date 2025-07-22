@@ -96,6 +96,12 @@ const char* FSRFG_Dx12::Name() { return "FSR-FG"; }
 
 bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* output, double frameTime)
 {
+    if (_fgContext == nullptr)
+    {
+        LOG_DEBUG("No fg context");
+        return false;
+    }
+
     LOG_DEBUG("(FG) running, frame: {0}", _frameCount);
 
     _lastDispatchedFrame = _frameCount;
@@ -117,7 +123,10 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
     DXGI_SWAP_CHAIN_DESC scDesc {};
     _swapChain->GetDesc(&scDesc);
-    auto desc = output->GetDesc();
+    D3D12_RESOURCE_DESC desc = {};
+
+    if (output != nullptr)
+        desc = output->GetDesc();
 
     auto index = GetIndex();
     if (_paramHudless[index].resource != nullptr)
@@ -206,7 +215,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
     DXGI_SWAP_CHAIN_DESC scDesc1 {};
     if (State::Instance().currentSwapchain->GetDesc(&scDesc1) == S_OK)
     {
-        if (State::Instance().currentFeature != nullptr)
+        if (State::Instance().activeFgInput == FGInput::Upscaler && State::Instance().currentFeature != nullptr)
         {
             m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(
                 (scDesc1.BufferDesc.Width - State::Instance().currentFeature->DisplayWidth()) / 2);
@@ -277,13 +286,16 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
         dfgPrepare.frameID = _frameCount;
         dfgPrepare.flags = m_FrameGenerationConfig.flags;
+
+        // TODO: don't use currentFeature
         dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(),
                                   State::Instance().currentFeature->RenderHeight() };
 
         dfgPrepare.jitterOffset.x = _jitterX;
         dfgPrepare.jitterOffset.y = _jitterY;
-        dfgPrepare.motionVectors = ffxApiGetResourceDX12(_paramVelocity[frameIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
-        dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[frameIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
+        dfgPrepare.motionVectors =
+            ffxApiGetResourceDX12(_paramVelocity[frameIndex].resource, _paramVelocity->getFfxApiState());
+        dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[frameIndex].resource, _paramDepth->getFfxApiState());
 
         dfgPrepare.motionVectorScale.x = _mvScaleX;
         dfgPrepare.motionVectorScale.y = _mvScaleY;
@@ -459,8 +471,9 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
 
         dfgPrepare.jitterOffset.x = _jitterX;
         dfgPrepare.jitterOffset.y = _jitterY;
-        dfgPrepare.motionVectors = ffxApiGetResourceDX12(_paramVelocity[fIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
-        dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[fIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
+        dfgPrepare.motionVectors =
+            ffxApiGetResourceDX12(_paramVelocity[fIndex].resource, _paramVelocity->getFfxApiState());
+        dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[fIndex].resource, _paramDepth->getFfxApiState());
 
         dfgPrepare.motionVectorScale.x = _mvScaleX;
         dfgPrepare.motionVectorScale.y = _mvScaleY;
