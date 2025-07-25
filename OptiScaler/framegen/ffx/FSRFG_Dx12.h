@@ -21,7 +21,7 @@ class FSRFG_Dx12 : public virtual IFGFeature_Dx12
     const char* Name() override final;
     feature_version Version() override final;
 
-    UINT64 UpscaleStart() override final;
+    UINT64 UpdateFrameCount() override final;
     void UpscaleEnd() override final;
 
     void FgDone() override final;
@@ -34,7 +34,9 @@ class FSRFG_Dx12 : public virtual IFGFeature_Dx12
                           DXGI_SWAP_CHAIN_FULLSCREEN_DESC* pFullscreenDesc, IDXGISwapChain1** swapChain) override final;
     bool ReleaseSwapchain(HWND hwnd) override final;
 
-    void CreateContext(ID3D12Device* device, IFeature* upscalerContext) override final;
+    void CreateContext(ID3D12Device* device, FG_Constants& fgConstants) override final;
+
+    void EvaluateState(ID3D12Device* device, FG_Constants& fgConstants) override final;
 
     bool Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* output, double frameTime) override final;
     bool DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHudless, double frameTime) override final;

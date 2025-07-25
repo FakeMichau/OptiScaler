@@ -157,7 +157,8 @@ void IFGFeature_Dx12::SetVelocity(ID3D12GraphicsCommandList* cmdList, ID3D12Reso
 
     _paramVelocityCopy[index].setState(D3D12_RESOURCE_STATE_COPY_DEST);
 
-    if (Config::Instance()->FGResourceFlip.value_or_default() && _device != nullptr &&
+    if (State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->FGResourceFlip.value_or_default() &&
+        _device != nullptr &&
         CreateBufferResource(_device, velocity, D3D12_RESOURCE_STATE_COPY_DEST, &_paramVelocityCopy[index].resource, true,
                              false))
     {

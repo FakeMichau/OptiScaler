@@ -95,7 +95,9 @@ class IFGFeature_Dx12 : public virtual IFGFeature
                                   IDXGISwapChain1** swapChain) = 0;
     virtual bool ReleaseSwapchain(HWND hwnd) = 0;
 
-    virtual void CreateContext(ID3D12Device* device, IFeature* upscalerContext) = 0;
+    virtual void CreateContext(ID3D12Device* device, FG_Constants& fgConstants) = 0;
+
+    virtual void EvaluateState(ID3D12Device* device, FG_Constants& fgConstants) = 0;
 
     virtual bool Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* output, double frameTime) = 0;
     virtual bool DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHudless, double frameTime) = 0;

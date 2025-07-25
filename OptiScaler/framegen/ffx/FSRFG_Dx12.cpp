@@ -5,6 +5,8 @@
 #include <upscalers/IFeature.h>
 #include <menu/menu_overlay_dx.h>
 #include <future>
+#include <hooks/HooksDx.h>
+#include <hudfix/Hudfix_Dx12.h>
 
 // #define USE_QUEUE_FOR_FG
 
@@ -56,7 +58,7 @@ void FSRFG_Dx12::GetDispatchCommandList()
     LOG_DEBUG("FG CommandList D3D12_Query result: {}", FfxApiProxy::ReturnCodeToString(result));
 }
 
-UINT64 FSRFG_Dx12::UpscaleStart()
+UINT64 FSRFG_Dx12::UpdateFrameCount()
 {
     LOG_FUNC();
 
@@ -203,8 +205,9 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
     }
 
     m_FrameGenerationConfig.header.type = FFX_API_CONFIGURE_DESC_TYPE_FRAMEGENERATION;
-    m_FrameGenerationConfig.frameGenerationEnabled = true;
-    m_FrameGenerationConfig.flags = 0;
+    m_FrameGenerationConfig.frameGenerationEnabled = Config::Instance()->FGEnabled.value_or_default();
+    m_FrameGenerationConfig.flags =
+        FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_PACING_LINES | FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_RESET_INDICATORS;
 
     if (Config::Instance()->FGDebugView.value_or_default())
         m_FrameGenerationConfig.flags |= FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_VIEW;
@@ -272,9 +275,18 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
         backendDesc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12;
         backendDesc.device = State::Instance().currentD3D12Device;
 
+        ffxDispatchDescFrameGenerationPrepareCameraInfo dfgCameraData {};
+        dfgCameraData.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE_CAMERAINFO;
+        dfgCameraData.header.pNext = &backendDesc.header;
+
+        std::memcpy(dfgCameraData.cameraPosition, _cameraPosition, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraUp, _cameraUp, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraRight, _cameraRight, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraForward, _cameraForward, 3 * sizeof(float));
+
         ffxDispatchDescFrameGenerationPrepare dfgPrepare {};
         dfgPrepare.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE;
-        dfgPrepare.header.pNext = &backendDesc.header;
+        dfgPrepare.header.pNext = &dfgCameraData.header;
 
         // GetDispatchCommandList();
 
@@ -287,18 +299,29 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
         dfgPrepare.frameID = _frameCount;
         dfgPrepare.flags = m_FrameGenerationConfig.flags;
 
-        // TODO: don't use currentFeature
-        dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(),
-                                  State::Instance().currentFeature->RenderHeight() };
-
         dfgPrepare.jitterOffset.x = _jitterX;
         dfgPrepare.jitterOffset.y = _jitterY;
         dfgPrepare.motionVectors =
             ffxApiGetResourceDX12(_paramVelocity[frameIndex].resource, _paramVelocity->getFfxApiState());
         dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[frameIndex].resource, _paramDepth->getFfxApiState());
 
-        dfgPrepare.motionVectorScale.x = _mvScaleX;
-        dfgPrepare.motionVectorScale.y = _mvScaleY;
+        if (State::Instance().currentFeature && State::Instance().activeFgInput == FGInput::Upscaler)
+            dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(),
+                                      State::Instance().currentFeature->RenderHeight() };
+        else
+            dfgPrepare.renderSize = { dfgPrepare.depth.description.width, dfgPrepare.depth.description.height };
+
+        if (_mvScaleMultiplyByResolution)
+        {
+            dfgPrepare.motionVectorScale.x = _mvScaleX * dfgPrepare.renderSize.width;
+            dfgPrepare.motionVectorScale.y = _mvScaleY * dfgPrepare.renderSize.height;
+        }
+        else
+        {
+            dfgPrepare.motionVectorScale.x = _mvScaleX;
+            dfgPrepare.motionVectorScale.y = _mvScaleY;
+        }
+
         dfgPrepare.cameraFar = _cameraFar;
         dfgPrepare.cameraNear = _cameraNear;
         dfgPrepare.cameraFovAngleVertical = _cameraVFov;
@@ -371,7 +394,7 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
     }
 
     m_FrameGenerationConfig.frameGenerationEnabled = true;
-    m_FrameGenerationConfig.flags = 0;
+    m_FrameGenerationConfig.flags = FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_PACING_LINES;
 
     if (Config::Instance()->FGDebugView.value_or_default())
         m_FrameGenerationConfig.flags |= FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_VIEW;
@@ -466,24 +489,45 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
         dfgPrepare.frameID = _frameCount;
         dfgPrepare.flags = m_FrameGenerationConfig.flags;
 
-        dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(),
-                                  State::Instance().currentFeature->RenderHeight() };
-
         dfgPrepare.jitterOffset.x = _jitterX;
         dfgPrepare.jitterOffset.y = _jitterY;
         dfgPrepare.motionVectors =
             ffxApiGetResourceDX12(_paramVelocity[fIndex].resource, _paramVelocity->getFfxApiState());
         dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[fIndex].resource, _paramDepth->getFfxApiState());
 
-        dfgPrepare.motionVectorScale.x = _mvScaleX;
-        dfgPrepare.motionVectorScale.y = _mvScaleY;
+        if (State::Instance().currentFeature && State::Instance().activeFgInput == FGInput::Upscaler)
+            dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(),
+                                      State::Instance().currentFeature->RenderHeight() };
+        else
+            dfgPrepare.renderSize = { dfgPrepare.depth.description.width, dfgPrepare.depth.description.height };
+
+        if (_mvScaleMultiplyByResolution)
+        {
+            dfgPrepare.motionVectorScale.x = _mvScaleX * dfgPrepare.renderSize.width;
+            dfgPrepare.motionVectorScale.y = _mvScaleY * dfgPrepare.renderSize.height;
+        }
+        else
+        {
+            dfgPrepare.motionVectorScale.x = _mvScaleX;
+            dfgPrepare.motionVectorScale.y = _mvScaleY;
+        }
+
         dfgPrepare.cameraFar = _cameraFar;
         dfgPrepare.cameraNear = _cameraNear;
         dfgPrepare.cameraFovAngleVertical = _cameraVFov;
         dfgPrepare.frameTimeDelta = _ftDelta;
         dfgPrepare.viewSpaceToMetersFactor = _meterFactor;
 
-        retCode = FfxApiProxy::D3D12_Dispatch()(&_fgContext, &dfgPrepare.header);
+        ffxDispatchDescFrameGenerationPrepareCameraInfo dfgCameraData {};
+        dfgCameraData.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE_CAMERAINFO;
+        dfgCameraData.header.pNext = &dfgPrepare.header;
+
+        std::memcpy(dfgCameraData.cameraPosition, _cameraPosition, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraUp, _cameraUp, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraRight, _cameraRight, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraForward, _cameraForward, 3 * sizeof(float));
+
+        retCode = FfxApiProxy::D3D12_Dispatch()(&_fgContext, &dfgCameraData.header);
         LOG_DEBUG("D3D12_Dispatch result: {0}, frame: {1}, fIndex: {2}, commandList: {3:X}", retCode, _frameCount,
                   fIndex, (size_t) dfgPrepare.commandList);
 
@@ -524,6 +568,9 @@ ffxReturnCode_t FSRFG_Dx12::DispatchCallback(ffxDispatchDescFrameGeneration* par
     }
 #endif
 
+    LOG_DEBUG("frameID: {}, commandList: {:X}, numGeneratedFrames: {}", params->frameID, (size_t) params->commandList,
+            params->numGeneratedFrames);
+
     // check for status
     if (!Config::Instance()->FGEnabled.value_or_default() || _fgContext == nullptr || State::Instance().SCchanged
 #ifdef USE_QUEUE_FOR_FG
@@ -536,7 +583,8 @@ ffxReturnCode_t FSRFG_Dx12::DispatchCallback(ffxDispatchDescFrameGeneration* par
     }
 
     // If fg is active but upscaling paused
-    if (State::Instance().currentFeature == nullptr || !_isActive || params->frameID == _lastUpscaledFrameId ||
+    if ((State::Instance().currentFeature == nullptr && State::Instance().activeFgInput == FGInput::Upscaler) || !_isActive ||
+        params->frameID == _lastUpscaledFrameId ||
         State::Instance().FGchanged || State::Instance().currentFeature->FrameCount() == 0)
     {
         LOG_WARN("(FG) Callback without active FG! fIndex:{}", fIndex);
@@ -826,7 +874,7 @@ bool FSRFG_Dx12::ReleaseSwapchain(HWND hwnd)
     return true;
 }
 
-void FSRFG_Dx12::CreateContext(ID3D12Device* device, IFeature* upscalerContext)
+void FSRFG_Dx12::CreateContext(ID3D12Device* device, FG_Constants& fgConstants)
 {
     LOG_DEBUG("");
 
@@ -861,31 +909,38 @@ void FSRFG_Dx12::CreateContext(ID3D12Device* device, IFeature* upscalerContext)
     if (State::Instance().currentSwapchain->GetDesc(&desc) == S_OK)
     {
         createFg.displaySize = { desc.BufferDesc.Width, desc.BufferDesc.Height };
-        createFg.maxRenderSize = { upscalerContext->DisplayWidth(), upscalerContext->DisplayHeight() };
+
+        if (fgConstants.displayWidth != 0 && fgConstants.displayHeight != 0)
+            createFg.maxRenderSize = { fgConstants.displayWidth, fgConstants.displayHeight };
+        else
+            createFg.maxRenderSize = { desc.BufferDesc.Width, desc.BufferDesc.Height };
     }
     else
     {
         // this might cause issues
-        createFg.displaySize = { upscalerContext->DisplayWidth(), upscalerContext->DisplayHeight() };
-        createFg.maxRenderSize = { upscalerContext->DisplayWidth(), upscalerContext->DisplayHeight() };
+        createFg.displaySize = { fgConstants.displayWidth, fgConstants.displayHeight };
+        createFg.maxRenderSize = { fgConstants.displayWidth, fgConstants.displayHeight };
     }
 
     createFg.flags = 0;
 
-    if (upscalerContext->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_IsHDR)
+    if (fgConstants.flags & FG_Flags::Hdr)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_HIGH_DYNAMIC_RANGE;
 
-    if (upscalerContext->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_DepthInverted)
+    if (fgConstants.flags & FG_Flags::InvertedDepth)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_DEPTH_INVERTED;
 
-    if (upscalerContext->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_MVJittered)
+    if (fgConstants.flags & FG_Flags::JitteredMVs)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION;
 
-    if ((upscalerContext->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_MVLowRes) == 0)
+    if (fgConstants.flags & FG_Flags::DisplayResolutionMVs)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_DISPLAY_RESOLUTION_MOTION_VECTORS;
 
-    if (Config::Instance()->FGAsync.value_or_default())
+    if (fgConstants.flags & FG_Flags::Async)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_ASYNC_WORKLOAD_SUPPORT;
+
+    if (fgConstants.flags & FG_Flags::InfiniteDepth)
+        createFg.flags |= FFX_FRAMEGENERATION_ENABLE_DEPTH_INFINITE;
 
     createFg.backBufferFormat = ffxApiGetSurfaceFormatDX12(desc.BufferDesc.Format);
     createFg.header.pNext = &backendDesc.header;
@@ -900,4 +955,47 @@ void FSRFG_Dx12::CreateContext(ID3D12Device* device, IFeature* upscalerContext)
     _isActive = (retCode == FFX_API_RETURN_OK);
 
     LOG_DEBUG("Create");
+}
+
+void FSRFG_Dx12::EvaluateState(ID3D12Device* device, FG_Constants& fgConstants)
+{
+    LOG_FUNC();
+
+    if (!Config::Instance()->OverlayMenu.value_or_default())
+        return;
+
+    if (!State::Instance().FGchanged && Config::Instance()->FGEnabled.value_or_default() &&
+        TargetFrame() < FrameCount() && FfxApiProxy::InitFfxDx12() && !IsActive() &&
+        HooksDx::CurrentSwapchainFormat() != DXGI_FORMAT_UNKNOWN)
+    {
+        CreateObjects(device);
+        CreateContext(device, fgConstants);
+        ResetCounters();
+        UpdateTarget();
+    }
+    else if ((!Config::Instance()->FGEnabled.value_or_default() || State::Instance().FGchanged) && IsActive())
+    {
+        StopAndDestroyContext(State::Instance().SCchanged, false, false);
+
+        if (State::Instance().activeFgInput == FGInput::Upscaler)
+            Hudfix_Dx12::ResetCounters();
+    }
+
+    if (State::Instance().FGchanged)
+    {
+        LOG_DEBUG("(FG) Frame generation paused");
+        ResetCounters();
+        UpdateTarget();
+
+        if (State::Instance().activeFgInput == FGInput::Upscaler)
+            Hudfix_Dx12::ResetCounters();
+
+        // Release FG mutex
+        if (Mutex.getOwner() == 2)
+            Mutex.unlockThis(2);
+
+        State::Instance().FGchanged = false;
+    }
+
+    State::Instance().SCchanged = false;
 }

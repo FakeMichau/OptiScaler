@@ -226,6 +226,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGISwapChain4::Present(UINT SyncInterval, UIN
         result = m_pReal->Present(SyncInterval, Flags);
     }
 
+    LOG_DEBUG("Present: Flags=0x{:X}, Focused={}, RenderTrig={}", Flags, (GetForegroundWindow() == Handle), (RenderTrig != nullptr));
+
     return result;
 }
 
@@ -323,7 +325,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGISwapChain4::ResizeBuffers(UINT BufferCount
         State::Instance().FGresetCapturedResources = true;
         State::Instance().FGonlyUseCapturedResources = false;
 
-        if (State::Instance().currentFeature != nullptr)
+        //if (State::Instance().currentFeature != nullptr)
             State::Instance().FGchanged = true;
     }
 
@@ -604,7 +606,7 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGISwapChain4::ResizeBuffers1(UINT BufferCoun
         State::Instance().FGresetCapturedResources = true;
         State::Instance().FGonlyUseCapturedResources = false;
 
-        if (State::Instance().currentFeature != nullptr)
+        //if (State::Instance().currentFeature != nullptr)
             State::Instance().FGchanged = true;
     }
 

@@ -60,9 +60,12 @@ class StreamlineHooks
     // DLSSG
     static PFN_slGetPluginFunction o_dlssg_slGetPluginFunction;
     static PFN_slOnPluginLoad o_dlssg_slOnPluginLoad;
+    static decltype(&slSetConstants) o_slSetConstants;
     static decltype(&slDLSSGSetOptions) o_slDLSSGSetOptions;
 
     static bool hkdlssg_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON);
+    static sl::Result hkslSetConstants(const sl::Constants& values, const sl::FrameToken& frame,
+                                      const sl::ViewportHandle& viewport);
     static sl::Result hkslDLSSGSetOptions(const sl::ViewportHandle& viewport, const sl::DLSSGOptions& options);
     static void* hkdlssg_slGetPluginFunction(const char* functionName);
 

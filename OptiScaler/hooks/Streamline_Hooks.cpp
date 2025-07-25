@@ -27,6 +27,7 @@ StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_dlss_slOnPluginLoad = nul
 // DLSSG
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_dlssg_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_dlssg_slOnPluginLoad = nullptr;
+decltype(&slSetConstants) StreamlineHooks::o_slSetConstants = nullptr;
 decltype(&slDLSSGSetOptions) StreamlineHooks::o_slDLSSGSetOptions = nullptr;
 
 // Reflex
@@ -102,79 +103,31 @@ sl::Result StreamlineHooks::hkslInit(sl::Preferences* pref, uint64_t sdkVersion)
 sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::ResourceTag* tags, uint32_t numTags,
     sl::CommandBuffer* cmdBuffer)
 {
-    IFGFeature_Dx12* fg = nullptr;
-
-    if (State::Instance().activeFgInput == FGInput::DLSSG)
-        fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
-
     for (uint32_t i = 0; i < numTags; i++)
     {
-        if (tags[i].type == sl::kBufferTypeHUDLessColor)
+        // Cyberpunk hudless state fix for RDNA 2
+        if (State::Instance().gameQuirks & GameQuirk::CyberpunkHudlessStateOverride &&
+            tags[i].resource->state ==
+                (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) &&
+            tags[i].type == sl::kBufferTypeHUDLessColor) 
         {
-            // Cyberpunk hudless state fix for RDNA 2
-            if (State::Instance().gameQuirks & GameQuirk::CyberpunkHudlessStateOverride &&
-                tags[i].resource->state ==
-                (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)) 
-            {
-                tags[i].resource->state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-                LOG_TRACE("Changing hudless resource state");
-            }
-
-            if (fg != nullptr)
-            {
-                auto hudlessResource = tags[i].resource->native;
-
-                fg->SetHudless((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) hudlessResource,
-                                (D3D12_RESOURCE_STATES) tags[i].resource->state,
-                                tags[i].lifecycle == sl::eOnlyValidNow);
-
-                LOG_TRACE("HUDLESS set");
-
-                // TODO: Hudless being set last is an assumption, might not always be the case, find better dispatch point
-                fg->Dispatch((ID3D12GraphicsCommandList*) cmdBuffer, nullptr, State::Instance().lastFrameTime);
-            }
+            tags[i].resource->state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+            LOG_TRACE("Changing hudless resource state");
         }
 
-        if (tags[i].type == sl::kBufferTypeDepth || tags[i].type == sl::kBufferTypeHiResDepth ||
-            tags[i].type == sl::kBufferTypeLinearDepth)
+        if (State::Instance().activeFgInput == FGInput::DLSSG && (tags[i].type == sl::kBufferTypeHUDLessColor ||
+            tags[i].type == sl::kBufferTypeDepth ||
+            tags[i].type == sl::kBufferTypeHiResDepth || tags[i].type == sl::kBufferTypeLinearDepth ||
+            tags[i].type == sl::kBufferTypeMotionVectors))
         {
-            if (fg != nullptr)
-            {
-                auto depthResource = tags[i].resource->native;
+            State::Instance().slFGInputs.reportResource(tags[i], (ID3D12GraphicsCommandList*) cmdBuffer);
 
-                Config::Instance()->FGMakeDepthCopy.set_volatile_value(tags[i].lifecycle == sl::eOnlyValidNow);
-                //Config::Instance()->FGMakeDepthCopy.set_volatile_value(false);
-
-                fg->SetDepth((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) depthResource,
-                                (D3D12_RESOURCE_STATES) tags[i].resource->state);      
-
-                LOG_TRACE("DEPTH set");
-            }
-        }
-
-        if (tags[i].type == sl::kBufferTypeMotionVectors)
-        {
-            if (fg != nullptr)
-            {
-                auto mvResource = tags[i].resource->native;
-
-                auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
-
-                Config::Instance()->FGMakeMVCopy.set_volatile_value(tags[i].lifecycle == sl::eOnlyValidNow);
-                //Config::Instance()->FGMakeMVCopy.set_volatile_value(false);
-
-                fg->SetVelocity((ID3D12GraphicsCommandList*) cmdBuffer, (ID3D12Resource*) mvResource,
-                                (D3D12_RESOURCE_STATES) tags[i].resource->state);
-
-                LOG_TRACE("VELOCITY set");
-            }
+            // TODO: Hudless being set last is an assumption, might not always be the case, find better dispatch point
+            if (tags[i].type == sl::kBufferTypeHUDLessColor)
+                State::Instance().slFGInputs.dispatchFG((ID3D12GraphicsCommandList*) cmdBuffer);
         }
 
         // TODO: any use for kBufferTypeUIColorAndAlpha ???
-
-        //fg->SetCameraValues(cameraNear, cameraFar, cameraVFov, meterFactor);
-        //fg->SetFrameTimeDelta(State::Instance().lastFrameTime);
-        //fg->SetMVScale(mvScaleX, mvScaleY);
     }
     auto result = o_slSetTag(viewport, tags, numTags, cmdBuffer);
     return result;
@@ -369,6 +322,16 @@ bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSO
     return result;
 }
 
+sl::Result StreamlineHooks::hkslSetConstants(const sl::Constants& values, const sl::FrameToken& frame,
+                                           const sl::ViewportHandle& viewport)
+{
+    LOG_FUNC();
+
+    State::Instance().slFGInputs.setConstants(values);
+
+    return o_slSetConstants(values, frame, viewport);
+}
+
 bool StreamlineHooks::hkcommon_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON)
 {
     LOG_FUNC();
@@ -454,11 +417,6 @@ void* StreamlineHooks::hkdlssg_slGetPluginFunction(const char* functionName)
     {
         o_slDLSSGSetOptions = (decltype(&slDLSSGSetOptions)) o_dlssg_slGetPluginFunction(functionName);
         return &hkslDLSSGSetOptions;
-    }
-
-    if (strcmp(functionName, "slAllocateResources") == 0)
-    {
-        LOG_DEBUG("Fun");
     }
 
     return o_dlssg_slGetPluginFunction(functionName);
@@ -573,6 +531,12 @@ void* StreamlineHooks::hkcommon_slGetPluginFunction(const char* functionName)
     {
         o_common_slSetParameters_sl1 = (PFN_slSetParameters_sl1) o_common_slGetPluginFunction(functionName);
         return &hkcommon_slSetParameters_sl1;
+    }
+
+    if (strcmp(functionName, "slSetConstants") == 0)
+    {
+        o_slSetConstants = (decltype(&slSetConstants)) o_common_slGetPluginFunction(functionName);
+        return &hkslSetConstants;
     }
 
     return o_common_slGetPluginFunction(functionName);

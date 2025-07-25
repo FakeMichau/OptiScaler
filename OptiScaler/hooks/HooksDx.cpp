@@ -443,7 +443,7 @@ static HRESULT hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Fla
         ReflexHooks::update(false, false);
 
     // Upscaler GPU time computation
-    if (State::Instance().activeFgInput == FGInput::Upscaler && HooksDx::dx12UpscaleTrig &&
+    if (State::Instance().activeFgInput != FGInput::Upscaler && HooksDx::dx12UpscaleTrig &&
         HooksDx::readbackBuffer != nullptr &&
         HooksDx::queryHeap != nullptr && cq != nullptr)
     {
