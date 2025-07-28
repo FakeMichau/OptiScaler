@@ -195,10 +195,10 @@ void IFGFeature_Dx12::SetVelocity(ID3D12GraphicsCommandList* cmdList, ID3D12Reso
     if (Config::Instance()->FGMakeMVCopy.value_or_default() &&
         CopyResource(cmdList, velocity, &_paramVelocityCopy[index].resource, _paramVelocity->getState()))
     {
-        LOG_TRACE("Setting velocity, index: {}", index);
         _paramVelocity[index] = _paramVelocityCopy[index];
-        return;
     }
+
+    LOG_TRACE("Setting velocity, index: {}", index);
 }
 
 void IFGFeature_Dx12::SetDepth(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* depth, D3D12_RESOURCE_STATES state)
@@ -250,16 +250,17 @@ void IFGFeature_Dx12::SetDepth(ID3D12GraphicsCommandList* cmdList, ID3D12Resourc
     if (Config::Instance()->FGMakeDepthCopy.value_or_default() &&
         CopyResource(cmdList, depth, &_paramDepthCopy[index].resource, _paramDepth[index].getState()))
     {
-        LOG_TRACE("Setting depth, index: {}", index);
         _paramDepth[index] = _paramDepthCopy[index];
     }
+
+    LOG_TRACE("Setting depth, index: {}", index);
 }
 
 void IFGFeature_Dx12::SetHudless(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* hudless,
                                  D3D12_RESOURCE_STATES state, bool makeCopy)
 {
     auto index = GetIndex();
-    LOG_TRACE("Index: {}, Resource: {:X}, CmdList: {:X}", index, (size_t) hudless, (size_t) cmdList);
+    LOG_TRACE("Setting hudless, index: {}, Resource: {:X}, CmdList: {:X}", index, (size_t) hudless, (size_t) cmdList);
 
     if (cmdList == nullptr || !makeCopy)
     {
@@ -278,8 +279,6 @@ void IFGFeature_Dx12::SetHudless(ID3D12GraphicsCommandList* cmdList, ID3D12Resou
         _paramHudless[index].resource = hudless;
         _paramHudless[index].setState(state);
     }
-    
-    SetHudlessReady();
 }
 
 void IFGFeature_Dx12::CreateObjects(ID3D12Device* InDevice)
@@ -382,7 +381,8 @@ ID3D12CommandList* IFGFeature_Dx12::ExecuteHudlessCmdList(ID3D12CommandQueue* qu
     auto fIndex = GetIndex();
     auto result = _commandList[fIndex]->Close();
 
-    _mvAndDepthReady[fIndex] = false;
+    _velocityReady[fIndex] = false;
+    _depthReady[fIndex] = false;
     _hudlessReady[fIndex] = false;
     _hudlessDispatchReady[fIndex] = false;
 
@@ -407,7 +407,9 @@ ID3D12CommandList* IFGFeature_Dx12::ExecuteHudlessCmdList(ID3D12CommandQueue* qu
     return nullptr;
 }
 
-void IFGFeature_Dx12::SetUpscaleInputsReady() { _mvAndDepthReady[GetIndex()] = true; }
+void IFGFeature_Dx12::SetVelocityReady() { _velocityReady[GetIndex()] = true; }
+
+void IFGFeature_Dx12::SetDepthReady() { _depthReady[GetIndex()] = true; }
 
 void IFGFeature_Dx12::SetHudlessReady() { _hudlessReady[GetIndex()] = true; }
 
@@ -416,7 +418,8 @@ void IFGFeature_Dx12::SetHudlessDispatchReady() { _hudlessDispatchReady[GetIndex
 void IFGFeature_Dx12::Present()
 {
     auto fIndex = LastDispatchedFrame() % BUFFER_COUNT;
-    _mvAndDepthReady[fIndex] = false;
+    _velocityReady[fIndex] = false;
+    _depthReady[fIndex] = false;
     _hudlessReady[fIndex] = false;
     _hudlessDispatchReady[fIndex] = false;
 
@@ -436,10 +439,10 @@ void IFGFeature_Dx12::Present()
     // DispatchHudless(nullptr, hudless, State::Instance().lastFrameTime);
 }
 
-bool IFGFeature_Dx12::UpscalerInputsReady() { return _mvAndDepthReady[GetIndex()]; }
+bool IFGFeature_Dx12::UpscalerInputsReady() { return _velocityReady[GetIndex()] && _depthReady[GetIndex()]; }
 bool IFGFeature_Dx12::HudlessReady() { return _hudlessReady[GetIndex()]; }
 bool IFGFeature_Dx12::ReadyForExecute()
 {
     auto fIndex = GetIndex();
-    return _mvAndDepthReady[fIndex] && _hudlessReady[fIndex];
+    return _velocityReady[fIndex] && _depthReady[fIndex] && _hudlessReady[fIndex];
 }

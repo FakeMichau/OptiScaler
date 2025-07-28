@@ -55,6 +55,25 @@ NvAPI_Status ReflexHooks::hkNvAPI_D3D_SetLatencyMarker(IUnknown* pDev,
 
     State::Instance().rtssReflexInjection = pSetLatencyMarkerParams->frameID >> 32;
 
+    // For now this means that dlssg inputs require fakenvapi, as otherwise hooks won't be called
+    if (pSetLatencyMarkerParams->markerType == RENDERSUBMIT_START && State::Instance().activeFgInput == FGInput::DLSSG)
+    {
+        static ID3D12Device* device12 = nullptr;
+        static IUnknown* lastDevice = nullptr;
+
+        if (pDev != lastDevice)
+        {
+            lastDevice = pDev;
+            device12 = nullptr;
+        }
+
+        if (pDev && !device12)
+            pDev->QueryInterface(IID_PPV_ARGS(&device12));
+
+        if (device12)
+            State::Instance().slFGInputs.evaluateState(device12);
+    }
+
     return o_NvAPI_D3D_SetLatencyMarker(pDev, pSetLatencyMarkerParams);
 }
 

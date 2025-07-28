@@ -2544,7 +2544,8 @@ bool MenuCommon::RenderMenu()
                 {
                     ImGui::SeparatorText("Frame Generation (FSR FG)");
 
-                    if (currentFeature != nullptr && !currentFeature->IsFrozen() && FfxApiProxy::InitFfxDx12())
+                    if (State::Instance().activeFgInput != FGInput::Upscaler || (currentFeature != nullptr && !currentFeature->IsFrozen()) &&
+                        FfxApiProxy::InitFfxDx12())
                     {
                         bool fgActive = Config::Instance()->FGEnabled.value_or_default();
                         if (ImGui::Checkbox("FG Active", &fgActive))

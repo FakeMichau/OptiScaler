@@ -50,8 +50,6 @@ struct Dx12Resource
     }
 };
 
-
-
 class IFGFeature_Dx12 : public virtual IFGFeature
 {
   private:
@@ -64,7 +62,8 @@ class IFGFeature_Dx12 : public virtual IFGFeature
     ID3D12CommandQueue* _gameCommandQueue = nullptr;
     HWND _hwnd = NULL;
 
-    bool _mvAndDepthReady[BUFFER_COUNT] = { false, false, false, false };
+    bool _velocityReady[BUFFER_COUNT] = { false, false, false, false };
+    bool _depthReady[BUFFER_COUNT] = { false, false, false, false };
     bool _hudlessReady[BUFFER_COUNT] = { false, false, false, false };
     bool _hudlessDispatchReady[BUFFER_COUNT] = { false, false, false, false };
 
@@ -121,7 +120,8 @@ class IFGFeature_Dx12 : public virtual IFGFeature
     IFGFeature_Dx12() = default;
 
     // Inherited via IFGFeature
-    void SetUpscaleInputsReady() override;
+    void SetVelocityReady() override;
+    void SetDepthReady() override;
     void SetHudlessReady() override;
     void SetHudlessDispatchReady() override;
     void Present() override;

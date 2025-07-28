@@ -4,15 +4,15 @@
 
 bool Sl_Inputs_Dx12::setConstants(const sl::Constants& values) 
 {
-    constants = sl::Constants {};
+    slConstants = sl::Constants {};
 
-    if (constants.has_value() && values.structVersion == constants.value().structVersion)
+    if (slConstants.has_value() && values.structVersion == slConstants.value().structVersion)
     {
-        constants = values;
+        slConstants = values;
         return true;
     }
 
-    constants.reset();
+    slConstants.reset();
 
     LOG_ERROR("Wrong constant struct version");
 
@@ -26,7 +26,7 @@ bool Sl_Inputs_Dx12::evaluateState(ID3D12Device* device)
     if (fgOutput == nullptr)
         return false;
 
-    if (!constants.has_value())
+    if (!slConstants.has_value())
     {
         LOG_ERROR("Called without constants being set");
         return false;
@@ -41,17 +41,20 @@ bool Sl_Inputs_Dx12::evaluateState(ID3D12Device* device)
     //if ()
     //    fgConstants.flags |= FG_Flags::Hdr;
 
-    if (constants.value().depthInverted)
+    if (slConstants.value().depthInverted)
         fgConstants.flags |= FG_Flags::InvertedDepth;
 
-    if (constants.value().motionVectorsJittered)
+    if (slConstants.value().motionVectorsJittered)
         fgConstants.flags |= FG_Flags::JitteredMVs;
 
-    if (constants.value().motionVectorsDilated)
+    if (slConstants.value().motionVectorsDilated)
         fgConstants.flags |= FG_Flags::DisplayResolutionMVs;
 
     if (Config::Instance()->FGAsync.value_or_default())
         fgConstants.flags |= FG_Flags::Async;
+
+    if (infiniteDepth)
+        fgConstants.flags |= FG_Flags::InfiniteDepth;
 
     fgOutput->UpdateFrameCount();
     fgOutput->EvaluateState(device, fgConstants);
@@ -61,9 +64,15 @@ bool Sl_Inputs_Dx12::evaluateState(ID3D12Device* device)
 
 bool Sl_Inputs_Dx12::reportResource(const sl::ResourceTag& tag, ID3D12GraphicsCommandList* cmdBuffer)
 {
+    // TODO: disable if FG disabled
+
+    if (!cmdBuffer)
+        LOG_ERROR("cmdBuffer is null");
+
     auto fgOutput = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
 
-    if (fgOutput == nullptr)
+    // It's possible for some only resources to be marked ready if FGEnabled is enabled during resource tagging
+    if (fgOutput == nullptr || !fgOutput->IsActive() || !Config::Instance()->FGEnabled.value_or_default())
         return false;
 
     if (tag.type == sl::kBufferTypeHUDLessColor)
@@ -72,8 +81,20 @@ bool Sl_Inputs_Dx12::reportResource(const sl::ResourceTag& tag, ID3D12GraphicsCo
 
         fgOutput->SetHudless(cmdBuffer, hudlessResource,
                         (D3D12_RESOURCE_STATES) tag.resource->state, tag.lifecycle == sl::eOnlyValidNow);
+        fgOutput->SetHudlessReady();
 
-        LOG_TRACE("HUDLESS set");
+        auto static lastFormat = DXGI_FORMAT_UNKNOWN;
+        auto format = hudlessResource->GetDesc().Format;
+
+        // This might be specific to FSR FG
+        // Hopefully we don't need to use ffxCreateContextDescFrameGenerationHudless
+        if (lastFormat != DXGI_FORMAT_UNKNOWN && lastFormat != format)
+        {
+            State::Instance().FGchanged = true;
+            LOG_DEBUG("HUDLESS format changed, triggering FG reinit");
+        }
+
+        lastFormat = format;
     } 
     else if (tag.type == sl::kBufferTypeDepth || tag.type == sl::kBufferTypeHiResDepth ||
         tag.type == sl::kBufferTypeLinearDepth)
@@ -81,12 +102,10 @@ bool Sl_Inputs_Dx12::reportResource(const sl::ResourceTag& tag, ID3D12GraphicsCo
         auto depthResource = (ID3D12Resource*) tag.resource->native;
 
         Config::Instance()->FGMakeDepthCopy.set_volatile_value(tag.lifecycle == sl::eOnlyValidNow);
-        // Config::Instance()->FGMakeDepthCopy.set_volatile_value(false);
 
         fgOutput->SetDepth(cmdBuffer, depthResource,
                         (D3D12_RESOURCE_STATES) tag.resource->state);
-
-        LOG_TRACE("DEPTH set");
+        fgOutput->SetDepthReady();
     }
     else if (tag.type == sl::kBufferTypeMotionVectors)
     {
@@ -95,15 +114,23 @@ bool Sl_Inputs_Dx12::reportResource(const sl::ResourceTag& tag, ID3D12GraphicsCo
         auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
 
         Config::Instance()->FGMakeMVCopy.set_volatile_value(tag.lifecycle == sl::eOnlyValidNow);
-        // Config::Instance()->FGMakeMVCopy.set_volatile_value(false);
 
         fgOutput->SetVelocity(cmdBuffer, mvResource,
                         (D3D12_RESOURCE_STATES) tag.resource->state);
-
-        LOG_TRACE("VELOCITY set");
+        fgOutput->SetVelocityReady();
     }
 
     return true; 
+}
+
+bool Sl_Inputs_Dx12::readyToDispatch() 
+{
+    auto fgOutput = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
+
+    if (fgOutput == nullptr)
+        return false;
+
+    return fgOutput->ReadyForExecute();
 }
 
 bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
@@ -113,16 +140,20 @@ bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
     if (fgOutput == nullptr)
         return false;
 
-    if (!constants.has_value())
+    if (!slConstants.has_value())
         return false;
 
+    if (State::Instance().FGchanged)
+        return false;
+
+    // Nukem's function, licensed under GPLv3
     auto loadCameraMatrix = [&]()
     {
-        if (constants.value().orthographicProjection)
+        if (slConstants.value().orthographicProjection)
             return false;
 
         float projMatrix[4][4];
-        memcpy(projMatrix, (void*)&constants.value().cameraViewToClip, sizeof(projMatrix));
+        memcpy(projMatrix, (void*)&slConstants.value().cameraViewToClip, sizeof(projMatrix));
 
         // BUG: Various RTX Remix-based games pass in an identity matrix which is completely useless. No
         // idea why.
@@ -150,46 +181,54 @@ bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
 
         if (e < 0.0)
         {
-            constants.value().cameraNear = static_cast<float>((c == 0.0) ? 0.0 : (d / c));
-            constants.value().cameraFar = static_cast<float>(d / (c + 1.0));
+            slConstants.value().cameraNear = static_cast<float>((c == 0.0) ? 0.0 : (d / c));
+            slConstants.value().cameraFar = static_cast<float>(d / (c + 1.0));
         }
         else
         {
-            constants.value().cameraNear = static_cast<float>((c == 0.0) ? 0.0 : (-d / c));
-            constants.value().cameraFar = static_cast<float>(-d / (c - 1.0));
+            slConstants.value().cameraNear = static_cast<float>((c == 0.0) ? 0.0 : (-d / c));
+            slConstants.value().cameraFar = static_cast<float>(-d / (c - 1.0));
         }
 
-        if (constants.value().depthInverted)
-            std::swap(constants.value().cameraNear, constants.value().cameraFar);
+        if (slConstants.value().depthInverted)
+            std::swap(slConstants.value().cameraNear, slConstants.value().cameraFar);
 
-        constants.value().cameraFOV = static_cast<float>(2.0 * std::atan(1.0 / b));
+        slConstants.value().cameraFOV = static_cast<float>(2.0 * std::atan(1.0 / b));
         return true;
     };
 
-    //loadCameraMatrix();
+    LOG_DEBUG("Pre camera recalc near: {}, far: {}", slConstants.value().cameraNear, slConstants.value().cameraFar);
 
-    if (constants.value().cameraNear != 0.0f && constants.value().cameraFar == 0.0f)
+    // UE seems to not be passing the correct cameraViewToClip
+    // and we can't use it to calculate cameraNear and cameraFar.
+    if (engineType != sl::EngineType::eUnreal)
+        loadCameraMatrix();
+
+    infiniteDepth = false;
+    if (slConstants.value().cameraNear != 0.0f && slConstants.value().cameraFar == 0.0f)
     {
         // A CameraFar value of zero indicates an infinite far plane. Due to a bug in FSR's
         // setupDeviceDepthToViewSpaceDepthParams function, CameraFar must always be greater than
         // CameraNear when in use.
 
-        // TODO: Enabling this would require FG recreate for us
-        //desc.DepthPlaneInfinite = true;
-        constants.value().cameraFar = constants.value().cameraNear + 1.0f;
+        infiniteDepth = true;
+        slConstants.value().cameraFar = slConstants.value().cameraNear + 1.0f;
     }
 
-    // TODO: pass rest of the camera data
-    fgOutput->SetCameraValues(constants.value().cameraNear, constants.value().cameraFar,
-                                  constants.value().cameraFOV);
-    fgOutput->SetJitter(constants.value().jitterOffset.x, constants.value().jitterOffset.y);
-    fgOutput->SetMVScale(constants.value().mvecScale.x, constants.value().mvecScale.y, true);
+    LOG_DEBUG("Post camera recalc near: {}, far: {}", slConstants.value().cameraNear, slConstants.value().cameraFar);
 
-    // cameraPosition[3], float cameraUp[3], float cameraRight[3], float cameraForward[3]
-    fgOutput->SetCameraData(reinterpret_cast<float*>(&constants.value().cameraPos),
-                            reinterpret_cast<float*>(&constants.value().cameraUp),
-                            reinterpret_cast<float*>(&constants.value().cameraRight), 
-                            reinterpret_cast<float*>(&constants.value().cameraFwd)
+    fgOutput->SetCameraValues(slConstants.value().cameraNear, slConstants.value().cameraFar,
+                              slConstants.value().cameraFOV, 0.0f);
+
+    fgOutput->SetJitter(slConstants.value().jitterOffset.x, slConstants.value().jitterOffset.y);
+
+    bool multiplyByResolution = slConstants.value().mvecScale.x != 1.f || slConstants.value().mvecScale.y != 1.f;
+    fgOutput->SetMVScale(slConstants.value().mvecScale.x, slConstants.value().mvecScale.y, multiplyByResolution);
+
+    fgOutput->SetCameraData(reinterpret_cast<float*>(&slConstants.value().cameraPos),
+                            reinterpret_cast<float*>(&slConstants.value().cameraUp),
+                            reinterpret_cast<float*>(&slConstants.value().cameraRight), 
+                            reinterpret_cast<float*>(&slConstants.value().cameraFwd)
     );
 
     return fgOutput->Dispatch(cmdBuffer, nullptr, State::Instance().lastFrameTime);

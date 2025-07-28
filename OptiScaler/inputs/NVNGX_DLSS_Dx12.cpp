@@ -503,7 +503,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_Shutdown(void)
     // Disabled for now to check if it cause any issues
     // HooksDx::UnHookDx();
 
-    if (State::Instance().currentFG != nullptr)
+    if (State::Instance().currentFG != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
         State::Instance().currentFG->StopAndDestroyContext(true, true, false);
 
     shutdown = false;
@@ -874,7 +874,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_CreateFeature(ID3D12GraphicsComma
         State::Instance().currentFeature = deviceContext;
         evalCounter = 0;
 
-        if (State::Instance().currentFG != nullptr)
+        if (State::Instance().currentFG != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
             State::Instance().currentFG->ResetCounters();
 
         if (Config::Instance()->FGHUDFix.value_or_default())
@@ -930,7 +930,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_ReleaseFeature(NVSDK_NGX_Handle* 
     auto handleId = InHandle->Id;
 
     State::Instance().FGchanged = true;
-    if (State::Instance().currentFG != nullptr)
+    if (State::Instance().currentFG != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
     {
         State::Instance().currentFG->StopAndDestroyContext(true, false, false);
         Hudfix_Dx12::ResetCounters();
@@ -1274,7 +1274,8 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         // first release everything
         if (deviceContext->changeBackendCounter == 1)
         {
-            if (State::Instance().currentFG != nullptr && State::Instance().currentFG->IsActive())
+            if (State::Instance().currentFG != nullptr && State::Instance().currentFG->IsActive() &&
+                State::Instance().activeFgInput == FGInput::Upscaler)
             {
                 State::Instance().currentFG->StopAndDestroyContext(false, false, false);
                 Hudfix_Dx12::ResetCounters();
@@ -1453,7 +1454,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
 
         // if initial feature can't be inited
         State::Instance().currentFeature = deviceContext->feature.get();
-        if (State::Instance().currentFG != nullptr)
+        if (State::Instance().currentFG != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
             State::Instance().currentFG->UpdateTarget();
 
         // return NVSDK_NGX_Result_Success;
@@ -1510,9 +1511,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
 
         fg->EvaluateState(D3D12Device, fgConstants);
     }
-
-    if (State::Instance().activeFgInput == FGInput::DLSSG)
-        State::Instance().slFGInputs.evaluateState(D3D12Device);
 
     // FSR Camera values
     float cameraNear = 0.0f;

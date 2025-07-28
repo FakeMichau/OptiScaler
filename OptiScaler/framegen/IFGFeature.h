@@ -66,7 +66,8 @@ class IFGFeature
     virtual void UpscaleEnd() = 0;
     virtual void Present() = 0;
 
-    virtual void SetUpscaleInputsReady() = 0;
+    virtual void SetVelocityReady() = 0;
+    virtual void SetDepthReady() = 0;
     virtual void SetHudlessReady() = 0;
     virtual void SetHudlessDispatchReady() = 0;
 

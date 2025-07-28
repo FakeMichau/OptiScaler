@@ -729,7 +729,10 @@ bool Hudfix_Dx12::CheckForHudless(std::string callerName, ID3D12GraphicsCommandL
                 auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
 
                 if (fg != nullptr)
+                {
                     fg->SetHudless(cmdList, _formatTransfer->Buffer(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false);
+                    fg->SetHudlessReady();
+                }
             }
             else
             {
@@ -747,7 +750,10 @@ bool Hudfix_Dx12::CheckForHudless(std::string callerName, ID3D12GraphicsCommandL
             auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
 
             if (fg != nullptr)
+            {
                 fg->SetHudless(cmdList, _captureBuffer[fIndex], D3D12_RESOURCE_STATE_COPY_DEST, false);
+                fg->SetHudlessReady();
+            }
         }
 
         if (State::Instance().FGcaptureResources)

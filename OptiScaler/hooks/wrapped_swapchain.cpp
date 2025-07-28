@@ -226,8 +226,6 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGISwapChain4::Present(UINT SyncInterval, UIN
         result = m_pReal->Present(SyncInterval, Flags);
     }
 
-    LOG_DEBUG("Present: Flags=0x{:X}, Focused={}, RenderTrig={}", Flags, (GetForegroundWindow() == Handle), (RenderTrig != nullptr));
-
     return result;
 }
 

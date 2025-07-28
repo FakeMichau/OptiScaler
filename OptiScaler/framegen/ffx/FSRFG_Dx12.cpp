@@ -205,7 +205,9 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
     }
 
     m_FrameGenerationConfig.header.type = FFX_API_CONFIGURE_DESC_TYPE_FRAMEGENERATION;
-    m_FrameGenerationConfig.frameGenerationEnabled = Config::Instance()->FGEnabled.value_or_default();
+    m_FrameGenerationConfig.frameGenerationEnabled = true;
+
+    // TODO: remove
     m_FrameGenerationConfig.flags =
         FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_PACING_LINES | FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_RESET_INDICATORS;
 
@@ -361,7 +363,9 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
         Mutex.unlockThis(1);
     }
 
-    _mvAndDepthReady[frameIndex] = false;
+    _velocityReady[frameIndex] = false;
+    _depthReady[frameIndex] = false;
+    _hudlessReady[frameIndex] = false;
 
     return retCode == FFX_API_RETURN_OK;
 }
@@ -394,7 +398,7 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
     }
 
     m_FrameGenerationConfig.frameGenerationEnabled = true;
-    m_FrameGenerationConfig.flags = FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_PACING_LINES;
+    m_FrameGenerationConfig.flags = 0;
 
     if (Config::Instance()->FGDebugView.value_or_default())
         m_FrameGenerationConfig.flags |= FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_VIEW;
@@ -541,7 +545,8 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
         Mutex.unlockThis(1);
     };
 
-    _mvAndDepthReady[fIndex] = false;
+    _velocityReady[fIndex] = false;
+    _depthReady[fIndex] = false;
     _hudlessReady[fIndex] = false;
 
     return retCode == FFX_API_RETURN_OK;
@@ -585,7 +590,7 @@ ffxReturnCode_t FSRFG_Dx12::DispatchCallback(ffxDispatchDescFrameGeneration* par
     // If fg is active but upscaling paused
     if ((State::Instance().currentFeature == nullptr && State::Instance().activeFgInput == FGInput::Upscaler) || !_isActive ||
         params->frameID == _lastUpscaledFrameId ||
-        State::Instance().FGchanged || State::Instance().currentFeature->FrameCount() == 0)
+        State::Instance().FGchanged || (State::Instance().currentFeature && State::Instance().currentFeature->FrameCount() == 0))
     {
         LOG_WARN("(FG) Callback without active FG! fIndex:{}", fIndex);
 
@@ -963,6 +968,15 @@ void FSRFG_Dx12::EvaluateState(ID3D12Device* device, FG_Constants& fgConstants)
 
     if (!Config::Instance()->OverlayMenu.value_or_default())
         return;
+
+    static bool lastInfiniteDepth = false;
+    bool currentInfiniteDepth = static_cast<bool>(fgConstants.flags & FG_Flags::InfiniteDepth);
+    if (lastInfiniteDepth != currentInfiniteDepth)
+    {
+        lastInfiniteDepth = currentInfiniteDepth;
+        LOG_DEBUG("Infinite Depth changed: {}", currentInfiniteDepth);
+        State::Instance().FGchanged = true;
+    }
 
     if (!State::Instance().FGchanged && Config::Instance()->FGEnabled.value_or_default() &&
         TargetFrame() < FrameCount() && FfxApiProxy::InitFfxDx12() && !IsActive() &&

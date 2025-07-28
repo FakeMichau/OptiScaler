@@ -1597,7 +1597,8 @@ void ResTrack_Dx12::hkClose(ID3D12GraphicsCommandList* This)
                 {
                     LOG_DEBUG("Upscaler CmdList: {:X}", (size_t) This);
 
-                    fg->SetUpscaleInputsReady();
+                    fg->SetVelocityReady();
+                    fg->SetDepthReady();
 
                     if (fg->ReadyForExecute())
                         fg->DispatchHudless(This, true, State::Instance().lastFrameTime);

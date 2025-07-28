@@ -95,6 +95,9 @@ sl::Result StreamlineHooks::hkslInit(sl::Preferences* pref, uint64_t sdkVersion)
         o_logCallback = pref->logMessageCallback;
     pref->logLevel = sl::LogLevel::eCount;
     pref->logMessageCallback = &streamlineLogCallback;
+
+    State::Instance().slFGInputs.setEngineType(pref->engine);
+
     return o_slInit(*pref, sdkVersion);
 }
 
@@ -122,8 +125,7 @@ sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::Resourc
         {
             State::Instance().slFGInputs.reportResource(tags[i], (ID3D12GraphicsCommandList*) cmdBuffer);
 
-            // TODO: Hudless being set last is an assumption, might not always be the case, find better dispatch point
-            if (tags[i].type == sl::kBufferTypeHUDLessColor)
+            if (State::Instance().slFGInputs.readyToDispatch())
                 State::Instance().slFGInputs.dispatchFG((ID3D12GraphicsCommandList*) cmdBuffer);
         }
 
@@ -325,7 +327,9 @@ bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSO
 sl::Result StreamlineHooks::hkslSetConstants(const sl::Constants& values, const sl::FrameToken& frame,
                                            const sl::ViewportHandle& viewport)
 {
-    LOG_FUNC();
+    unsigned int frameIndex = frame;
+
+    LOG_TRACE("called with frameIndex: {}", frameIndex);
 
     State::Instance().slFGInputs.setConstants(values);
 

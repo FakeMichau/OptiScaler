@@ -283,8 +283,8 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
         LOG_TRACE("Accuired FG->Mutex: {}, fgMutexReleaseFrame: {}", fg->Mutex.getOwner(), _releaseMutexTargetFrame);
     }
 
-    if (willPresent && State::Instance().currentCommandQueue != nullptr && State::Instance().activeFgInput == FGInput::Upscaler &&
-        Config::Instance()->FGAsync.value_or_default() && fg->IsActive() && fg->TargetFrame() < fg->FrameCount() &&
+    if (willPresent && State::Instance().currentCommandQueue != nullptr && State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->FGAsync.value_or_default() &&
+        fg != nullptr && fg->IsActive() && fg->TargetFrame() < fg->FrameCount() &&
         fg->LastDispatchedFrame() != fg->FrameCount() && fg->UpscalerInputsReady())
     {
         State::Instance().fgTrigSource = "Present";
