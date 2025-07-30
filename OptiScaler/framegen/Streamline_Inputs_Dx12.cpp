@@ -231,5 +231,5 @@ bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
                             reinterpret_cast<float*>(&slConstants.value().cameraFwd)
     );
 
-    return fgOutput->Dispatch(cmdBuffer, nullptr, State::Instance().lastFrameTime);
+    return fgOutput->DispatchHudless(cmdBuffer, true, State::Instance().lastFrameTime);
 }

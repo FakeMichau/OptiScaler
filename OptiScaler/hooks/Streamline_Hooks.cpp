@@ -20,6 +20,7 @@ decltype(&slSetTag) StreamlineHooks::o_slSetTag = nullptr;
 decltype(&slEvaluateFeature) StreamlineHooks::o_slEvaluateFeature = nullptr;
 decltype(&slAllocateResources) StreamlineHooks::o_slAllocateResources = nullptr;
 decltype(&slSetConstants) StreamlineHooks::o_slSetConstants = nullptr;
+decltype(&slGetNativeInterface) StreamlineHooks::o_slGetNativeInterface = nullptr;
 decltype(&slSetD3DDevice) StreamlineHooks::o_slSetD3DDevice = nullptr;
 
 decltype(&sl1::slInit) StreamlineHooks::o_slInit_sl1 = nullptr;
@@ -685,8 +686,6 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
             o_slSetTag =
                 reinterpret_cast<decltype(&slSetTag)>(KernelBaseProxy::GetProcAddress_()(slInterposer, "slSetTag"));
             o_slInit = reinterpret_cast<decltype(&slInit)>(KernelBaseProxy::GetProcAddress_()(slInterposer, "slInit"));
-            o_slShutdown =
-                reinterpret_cast<decltype(&slShutdown)>(KernelBaseProxy::GetProcAddress_()(slInterposer, "slShutdown"));
             o_slEvaluateFeature = reinterpret_cast<decltype(&slEvaluateFeature)>(
                 KernelBaseProxy::GetProcAddress_()(slInterposer, "slEvaluateFeature"));
             o_slAllocateResources = reinterpret_cast<decltype(&slAllocateResources)>(

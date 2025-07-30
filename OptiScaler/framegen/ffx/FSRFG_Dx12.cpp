@@ -7,7 +7,6 @@
 #include <future>
 #include <hooks/HooksDx.h>
 #include <hudfix/Hudfix_Dx12.h>
-
 // #define USE_QUEUE_FOR_FG
 
 typedef struct FfxSwapchainFramePacingTuning
@@ -131,12 +130,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
         desc = output->GetDesc();
 
     auto index = GetIndex();
-    if (_paramHudless[index].resource != nullptr)
-    {
-        m_FrameGenerationConfig.HUDLessColor =
-            ffxApiGetResourceDX12(_paramHudless[index].resource, _paramHudless[index].getFfxApiState());
-    }
-    else if (Config::Instance()->FGHUDFixExtended.value_or_default() && desc.Format == scDesc.BufferDesc.Format)
+    if (Config::Instance()->FGHUDFixExtended.value_or_default() && desc.Format == scDesc.BufferDesc.Format)
     {
         if (desc.Width == scDesc.BufferDesc.Width && desc.Height == scDesc.BufferDesc.Height)
         {
@@ -218,34 +212,42 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
     // use swapchain buffer info
     DXGI_SWAP_CHAIN_DESC scDesc1 {};
-    if (State::Instance().currentSwapchain->GetDesc(&scDesc1) == S_OK)
+    bool hasSwapChainDesc = State::Instance().currentSwapchain->GetDesc(&scDesc1) == S_OK;
+    auto feature = State::Instance().currentFeature;
+
+    int bufferWidth = hasSwapChainDesc ? scDesc1.BufferDesc.Width : 0;
+    int bufferHeight = hasSwapChainDesc ? scDesc1.BufferDesc.Height : 0;
+
+    int defaultLeft = 0;
+    int defaultTop = 0;
+    int defaultWidth = 0;
+    int defaultHeight = 0;
+
+    if (feature)
     {
-        if (State::Instance().activeFgInput == FGInput::Upscaler && State::Instance().currentFeature != nullptr)
-        {
-            m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(
-                (scDesc1.BufferDesc.Width - State::Instance().currentFeature->DisplayWidth()) / 2);
-            m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(
-                (scDesc1.BufferDesc.Height - State::Instance().currentFeature->DisplayHeight()) / 2);
-        }
-        else
-        {
-            m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(0);
-            m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(0);
-        }
-        m_FrameGenerationConfig.generationRect.width =
-            Config::Instance()->FGRectWidth.value_or(scDesc1.BufferDesc.Width);
-        m_FrameGenerationConfig.generationRect.height =
-            Config::Instance()->FGRectHeight.value_or(scDesc1.BufferDesc.Height);
+        int displayWidth = feature->DisplayWidth();
+        int displayHeight = feature->DisplayHeight();
+
+        defaultLeft = hasSwapChainDesc ? (bufferWidth - displayWidth) / 2 : 0;
+        defaultTop = hasSwapChainDesc ? (bufferHeight - displayHeight) / 2 : 0;
+        defaultWidth = displayWidth;
+        defaultHeight = displayHeight;
     }
     else
     {
-        m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(0);
-        m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(0);
-        m_FrameGenerationConfig.generationRect.width =
-            Config::Instance()->FGRectWidth.value_or(State::Instance().currentFeature->DisplayWidth());
-        m_FrameGenerationConfig.generationRect.height =
-            Config::Instance()->FGRectHeight.value_or(State::Instance().currentFeature->DisplayHeight());
+        defaultLeft = 0;
+        defaultTop = 0;
+        defaultWidth = hasSwapChainDesc ? bufferWidth : 0;
+        defaultHeight = hasSwapChainDesc ? bufferHeight : 0;
+
+        if (!hasSwapChainDesc)
+            LOG_ERROR("No swapchain or feature, invalid FG Rect values");
     }
+
+    m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(defaultLeft);
+    m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(defaultTop);
+    m_FrameGenerationConfig.generationRect.width = Config::Instance()->FGRectWidth.value_or(defaultWidth);
+    m_FrameGenerationConfig.generationRect.height = Config::Instance()->FGRectHeight.value_or(defaultHeight);
 
     m_FrameGenerationConfig.frameGenerationCallbackUserContext = this;
     m_FrameGenerationConfig.frameGenerationCallback = [](ffxDispatchDescFrameGeneration* params,
@@ -372,6 +374,12 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
 bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHudless, double frameTime)
 {
+    if (_fgContext == nullptr)
+    {
+        LOG_DEBUG("No fg context");
+        return false;
+    }
+
     _lastDispatchedFrame = _frameCount;
 
     LOG_DEBUG("useHudless: {}, frameTime: {}", useHudless, frameTime);
@@ -407,38 +415,42 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
 
     // use swapchain buffer info
     DXGI_SWAP_CHAIN_DESC scDesc1 {};
-    if (State::Instance().currentSwapchain->GetDesc(&scDesc1) == S_OK)
+    bool hasSwapChainDesc = State::Instance().currentSwapchain->GetDesc(&scDesc1) == S_OK;
+    auto feature = State::Instance().currentFeature;
+
+    int bufferWidth = hasSwapChainDesc ? scDesc1.BufferDesc.Width : 0;
+    int bufferHeight = hasSwapChainDesc ? scDesc1.BufferDesc.Height : 0;
+
+    int defaultLeft = 0;
+    int defaultTop = 0;
+    int defaultWidth = 0;
+    int defaultHeight = 0;
+
+    if (feature)
     {
-        if (State::Instance().currentFeature != nullptr)
-        {
-            auto calculatedLeft = (scDesc1.BufferDesc.Width - State::Instance().currentFeature->DisplayWidth()) / 2;
-            auto finalLeft = Config::Instance()->FGRectLeft.value_or(calculatedLeft);
-            m_FrameGenerationConfig.generationRect.left = finalLeft;
+        int displayWidth = feature->DisplayWidth();
+        int displayHeight = feature->DisplayHeight();
 
-            auto calculatedTop = (scDesc1.BufferDesc.Height - State::Instance().currentFeature->DisplayHeight()) / 2;
-            auto finalTop = Config::Instance()->FGRectTop.value_or(calculatedTop);
-            m_FrameGenerationConfig.generationRect.top = finalTop;
-        }
-        else
-        {
-            m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(0);
-            m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(0);
-        }
-
-        m_FrameGenerationConfig.generationRect.width =
-            Config::Instance()->FGRectWidth.value_or(State::Instance().currentFeature->DisplayWidth());
-        m_FrameGenerationConfig.generationRect.height =
-            Config::Instance()->FGRectHeight.value_or(State::Instance().currentFeature->DisplayHeight());
+        defaultLeft = hasSwapChainDesc ? (bufferWidth - displayWidth) / 2 : 0;
+        defaultTop = hasSwapChainDesc ? (bufferHeight - displayHeight) / 2 : 0;
+        defaultWidth = displayWidth;
+        defaultHeight = displayHeight;
     }
     else
     {
-        m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(0);
-        m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(0);
-        m_FrameGenerationConfig.generationRect.width =
-            Config::Instance()->FGRectWidth.value_or(State::Instance().currentFeature->DisplayWidth());
-        m_FrameGenerationConfig.generationRect.height =
-            Config::Instance()->FGRectHeight.value_or(State::Instance().currentFeature->DisplayHeight());
+        defaultLeft = 0;
+        defaultTop = 0;
+        defaultWidth = hasSwapChainDesc ? bufferWidth : 0;
+        defaultHeight = hasSwapChainDesc ? bufferHeight : 0;
+
+        if (!hasSwapChainDesc)
+            LOG_ERROR("No swapchain or feature, invalid FG Rect values");
     }
+
+    m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(defaultLeft);
+    m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(defaultTop);
+    m_FrameGenerationConfig.generationRect.width = Config::Instance()->FGRectWidth.value_or(defaultWidth);
+    m_FrameGenerationConfig.generationRect.height = Config::Instance()->FGRectHeight.value_or(defaultHeight);
 
     m_FrameGenerationConfig.frameGenerationCallbackUserContext = this;
     m_FrameGenerationConfig.frameGenerationCallback = [](ffxDispatchDescFrameGeneration* params,
@@ -468,9 +480,20 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
         backendDesc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12;
         backendDesc.device = State::Instance().currentD3D12Device;
 
+        ffxDispatchDescFrameGenerationPrepareCameraInfo dfgCameraData {};
+        dfgCameraData.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE_CAMERAINFO;
+        dfgCameraData.header.pNext = &backendDesc.header;
+
+        std::memcpy(dfgCameraData.cameraPosition, _cameraPosition, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraUp, _cameraUp, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraRight, _cameraRight, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraForward, _cameraForward, 3 * sizeof(float));
+
         ffxDispatchDescFrameGenerationPrepare dfgPrepare {};
         dfgPrepare.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE;
-        dfgPrepare.header.pNext = &backendDesc.header;
+        dfgPrepare.header.pNext = &dfgCameraData.header;
+
+        // GetDispatchCommandList();
 
         if (cmdList != nullptr)
         {
@@ -522,18 +545,9 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
         dfgPrepare.frameTimeDelta = _ftDelta;
         dfgPrepare.viewSpaceToMetersFactor = _meterFactor;
 
-        ffxDispatchDescFrameGenerationPrepareCameraInfo dfgCameraData {};
-        dfgCameraData.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE_CAMERAINFO;
-        dfgCameraData.header.pNext = &dfgPrepare.header;
-
-        std::memcpy(dfgCameraData.cameraPosition, _cameraPosition, 3 * sizeof(float));
-        std::memcpy(dfgCameraData.cameraUp, _cameraUp, 3 * sizeof(float));
-        std::memcpy(dfgCameraData.cameraRight, _cameraRight, 3 * sizeof(float));
-        std::memcpy(dfgCameraData.cameraForward, _cameraForward, 3 * sizeof(float));
-
-        retCode = FfxApiProxy::D3D12_Dispatch()(&_fgContext, &dfgCameraData.header);
+        retCode = FfxApiProxy::D3D12_Dispatch()(&_fgContext, &dfgPrepare.header);
         LOG_DEBUG("D3D12_Dispatch result: {0}, frame: {1}, fIndex: {2}, commandList: {3:X}", retCode, _frameCount,
-                  fIndex, (size_t) dfgPrepare.commandList);
+                    fIndex, (size_t) dfgPrepare.commandList);
 
         if (retCode == FFX_API_RETURN_OK)
             SetHudlessDispatchReady();
@@ -614,16 +628,16 @@ ffxReturnCode_t FSRFG_Dx12::HudlessDispatchCallback(ffxDispatchDescFrameGenerati
 {
     // CallbackMutex.lock();
 
-    HRESULT result;
-    ffxReturnCode_t dispatchResult = FFX_API_RETURN_OK;
     int fIndex = params->frameID % BUFFER_COUNT;
+
+    params->reset = (_reset != 0);
 
     LOG_DEBUG("frameID: {}, commandList: {:X}, numGeneratedFrames: {}", params->frameID, (size_t) params->commandList,
               params->numGeneratedFrames);
 
     // if (params->frameID != _lastUpscaledFrameId && Config::Instance()->FGExecuteAfterCallback.value_or_default())
     //{
-    //     result = _commandList[fIndex]->Close();
+    //     auto result = _commandList[fIndex]->Close();
     //     LOG_DEBUG("fgCommandList[{}]->Close() result: {:X}", fIndex, (UINT) result);
 
     //    // if there is command list error return ERROR
@@ -640,22 +654,23 @@ ffxReturnCode_t FSRFG_Dx12::HudlessDispatchCallback(ffxDispatchDescFrameGenerati
     //}
 
     // check for status
-    if (!Config::Instance()->FGEnabled.value_or_default() || !Config::Instance()->FGHUDFix.value_or_default() ||
-        _fgContext == nullptr || State::Instance().SCchanged)
+    if (!Config::Instance()->FGEnabled.value_or_default() || _fgContext == nullptr || State::Instance().SCchanged)
     {
         LOG_WARN("Cancel async dispatch");
         params->numGeneratedFrames = 0;
     }
 
     // If fg is active but upscaling paused
-    if (State::Instance().currentFeature == nullptr || State::Instance().FGchanged || fIndex < 0 || !IsActive() ||
-        State::Instance().currentFeature->FrameCount() == 0 || params->frameID == _lastUpscaledFrameId)
+    if ((State::Instance().currentFeature == nullptr && State::Instance().activeFgInput == FGInput::Upscaler) ||
+        State::Instance().FGchanged || fIndex < 0 || !IsActive() ||
+        (State::Instance().currentFeature && State::Instance().currentFeature->FrameCount() == 0) ||
+        params->frameID == _lastUpscaledFrameId)
     {
         LOG_WARN("Upscaling paused! frameID: {}", params->frameID);
         params->numGeneratedFrames = 0;
     }
 
-    dispatchResult = FfxApiProxy::D3D12_Dispatch()(&_fgContext, &params->header);
+    auto dispatchResult = FfxApiProxy::D3D12_Dispatch()(&_fgContext, &params->header);
     LOG_DEBUG("D3D12_Dispatch result: {}, fIndex: {}", (UINT) dispatchResult, fIndex);
 
     _lastUpscaledFrameId = params->frameID;
