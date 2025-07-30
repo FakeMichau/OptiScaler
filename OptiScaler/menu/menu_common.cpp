@@ -2521,11 +2521,14 @@ bool MenuCommon::RenderMenu()
 
                 constexpr auto fgOptionsCount = sizeof(fgOptions) / sizeof(char*);
 
-                if (!Config::Instance()->FGInput.has_value())
-                    Config::Instance()->FGInput =
-                        Config::Instance()->FGInput.value_or_default(); // need to have a value before combo
+                if (!Config::Instance()->FGPreset.has_value())
+                    Config::Instance()->FGPreset =
+                        Config::Instance()->FGPreset.value_or_default(); // need to have a value before combo
 
                 ImGui::SeparatorText("Frame Generation");
+
+                PopulateCombo("FG Type", reinterpret_cast<CustomOptional<uint32_t>*>(&Config::Instance()->FGPreset),
+                              fgOptions, fgDesc.data(), fgOptionsCount, disabledMask.data(), false);
 
                 if (State::Instance().showRestartWarning)
                 {
@@ -2535,18 +2538,18 @@ bool MenuCommon::RenderMenu()
                 }
 
                 State::Instance().showRestartWarning =
-                    State::Instance().activeFgInput != Config::Instance()->FGInput.value_or_default();
+                    State::Instance().currentFgPreset != Config::Instance()->FGPreset.value_or_default();
 
                 // FSR FG controls
                 if (State::Instance().activeFgOutput == FGOutput::FSRFG &&
                     Config::Instance()->OverlayMenu.value_or_default() && !State::Instance().isWorkingAsNvngx &&
                     State::Instance().api == DX12)
                 {
-                    ImGui::SeparatorText("Frame Generation (FSR FG)");
-
                     if (State::Instance().activeFgInput != FGInput::Upscaler ||
                         (currentFeature != nullptr && !currentFeature->IsFrozen()) && FfxApiProxy::InitFfxDx12())
                     {
+                        ImGui::SeparatorText("Frame Generation (FSR FG)");
+
                         bool fgActive = Config::Instance()->FGEnabled.value_or_default();
                         if (ImGui::Checkbox("FG Active", &fgActive))
                         {

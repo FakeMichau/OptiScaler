@@ -18,6 +18,13 @@ typedef enum API
     Vulkan,
 } API;
 
+enum class FGPreset : uint32_t
+{
+    NoFG,
+    OptiFG,
+    Nukems,
+};
+
 enum class FGInput : uint32_t
 {
     NoFG,
@@ -70,8 +77,7 @@ class State
     float lastFsrCameraFar = 0.0f;
 
     // Frame Generation
-    // FGInput desiredFgInput = FGInput::NoFG;
-    // FGOutput desiredFgOutput = FGOutput::NoFG;
+    FGPreset currentFgPreset = FGPreset::NoFG;
     FGInput activeFgInput = FGInput::NoFG;
     FGOutput activeFgOutput = FGOutput::NoFG;
 

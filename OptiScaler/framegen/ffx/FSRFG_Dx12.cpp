@@ -201,9 +201,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
     m_FrameGenerationConfig.header.type = FFX_API_CONFIGURE_DESC_TYPE_FRAMEGENERATION;
     m_FrameGenerationConfig.frameGenerationEnabled = true;
 
-    // TODO: remove
-    m_FrameGenerationConfig.flags =
-        FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_PACING_LINES | FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_RESET_INDICATORS;
+    m_FrameGenerationConfig.flags = 0;
 
     if (Config::Instance()->FGDebugView.value_or_default())
         m_FrameGenerationConfig.flags |= FFX_FRAMEGENERATION_FLAG_DRAW_DEBUG_VIEW;

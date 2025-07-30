@@ -1107,6 +1107,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             SetEnvironmentVariable(L"SteamNoOverlayUIDrawing", L"1");
 
         // Initial state of FG
+        State::Instance().currentFgPreset = Config::Instance()->FGPreset.value_or_default();
         State::Instance().activeFgInput = Config::Instance()->FGInput.value_or_default();
         State::Instance().activeFgOutput = Config::Instance()->FGOutput.value_or_default();
 
