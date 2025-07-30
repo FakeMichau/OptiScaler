@@ -123,7 +123,7 @@ void IFGFeature_Dx12::ResourceBarrier(ID3D12GraphicsCommandList* cmdList, ID3D12
     barrier.Transition.pResource = resource;
     barrier.Transition.StateBefore = beforeState;
     barrier.Transition.StateAfter = afterState;
-    barrier.Transition.Subresource = 0;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     cmdList->ResourceBarrier(1, &barrier);
 }
 
@@ -152,6 +152,7 @@ void IFGFeature_Dx12::SetVelocity(ID3D12GraphicsCommandList* cmdList, ID3D12Reso
     if (cmdList == nullptr)
         return;
 
+    velocity->SetName(std::format(L"VelocityResource_{}", index).c_str());
     _paramVelocity[index].resource = velocity;
     _paramVelocity[index].setState(state);
 
@@ -159,7 +160,8 @@ void IFGFeature_Dx12::SetVelocity(ID3D12GraphicsCommandList* cmdList, ID3D12Reso
 
     if (State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->FGResourceFlip.value_or_default() &&
         _device != nullptr &&
-        CreateBufferResource(_device, velocity, D3D12_RESOURCE_STATE_COPY_DEST, &_paramVelocityCopy[index].resource, true,
+        CreateBufferResource(_device, velocity, _paramVelocityCopy[index].getState(),
+                             &_paramVelocityCopy[index].resource, true,
                              false))
     {
         if (_mvFlip.get() == nullptr)
@@ -193,8 +195,11 @@ void IFGFeature_Dx12::SetVelocity(ID3D12GraphicsCommandList* cmdList, ID3D12Reso
     }
 
     if (Config::Instance()->FGMakeMVCopy.value_or_default() &&
-        CopyResource(cmdList, velocity, &_paramVelocityCopy[index].resource, _paramVelocity->getState()))
+        CopyResource(cmdList, _paramVelocity[index].resource, &_paramVelocityCopy[index].resource,
+                     _paramVelocity[index].getState()))
     {
+        auto name = std::format(L"VelocityCopyResource_{}", index);
+        _paramVelocityCopy[index].resource->SetName(name.c_str());
         _paramVelocity[index] = _paramVelocityCopy[index];
     }
 
@@ -208,6 +213,11 @@ void IFGFeature_Dx12::SetDepth(ID3D12GraphicsCommandList* cmdList, ID3D12Resourc
     if (cmdList == nullptr)
         return;
 
+    // TODO: hack for DRG
+    //if (state & D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+    //    state |= D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+    depth->SetName(std::format(L"DepthResource_{}", index).c_str());
     _paramDepth[index].resource = depth;
     _paramDepth[index].setState(state);
 
@@ -215,7 +225,7 @@ void IFGFeature_Dx12::SetDepth(ID3D12GraphicsCommandList* cmdList, ID3D12Resourc
 
     if (Config::Instance()->FGResourceFlip.value_or_default() && _device != nullptr)
     {
-        if (!CreateBufferResource(_device, depth, D3D12_RESOURCE_STATE_COPY_DEST, &_paramDepthCopy[index].resource,
+        if (!CreateBufferResource(_device, depth, _paramDepthCopy[index].getState(), &_paramDepthCopy[index].resource,
                                   true, true))
             return;
 
@@ -248,8 +258,11 @@ void IFGFeature_Dx12::SetDepth(ID3D12GraphicsCommandList* cmdList, ID3D12Resourc
     }
 
     if (Config::Instance()->FGMakeDepthCopy.value_or_default() &&
-        CopyResource(cmdList, depth, &_paramDepthCopy[index].resource, _paramDepth[index].getState()))
+        CopyResource(cmdList, _paramDepth[index].resource, &_paramDepthCopy[index].resource,
+                     _paramDepth[index].getState()))
     {
+        auto name = std::format(L"DepthCopyResource_{}", index);
+        _paramDepthCopy[index].resource->SetName(name.c_str());
         _paramDepth[index] = _paramDepthCopy[index];
     }
 
@@ -262,6 +275,8 @@ void IFGFeature_Dx12::SetHudless(ID3D12GraphicsCommandList* cmdList, ID3D12Resou
     auto index = GetIndex();
     LOG_TRACE("Setting hudless, index: {}, Resource: {:X}, CmdList: {:X}", index, (size_t) hudless, (size_t) cmdList);
 
+    hudless->SetName(std::format(L"HudlessResource_{}", index).c_str());
+
     if (cmdList == nullptr || !makeCopy)
     {
         _paramHudless[index].resource = hudless;
@@ -273,6 +288,7 @@ void IFGFeature_Dx12::SetHudless(ID3D12GraphicsCommandList* cmdList, ID3D12Resou
     {
         _paramHudless[index].resource = _paramHudlessCopy[index].resource;
         _paramHudless[index].setState(D3D12_RESOURCE_STATE_COPY_DEST);
+        _paramHudlessCopy[index].resource->SetName(std::format(L"HudlessCopyResource_{}", index).c_str());
     }
     else
     {
@@ -303,7 +319,7 @@ void IFGFeature_Dx12::CreateObjects(ID3D12Device* InDevice)
                 LOG_ERROR("CreateCommandAllocators _commandAllocators[{}]: {:X}", i, (unsigned long) result);
                 break;
             }
-            allocator->SetName(L"_commandAllocator");
+            allocator->SetName(std::format(L"_commandAllocator_{}", i).c_str());
             if (!CheckForRealObject(__FUNCTION__, allocator, (IUnknown**) &_commandAllocators[i]))
                 _commandAllocators[i] = allocator;
 
@@ -315,7 +331,7 @@ void IFGFeature_Dx12::CreateObjects(ID3D12Device* InDevice)
                 LOG_ERROR("CreateCommandList _commandList[{}]: {:X}", i, (unsigned long) result);
                 break;
             }
-            cmdList->SetName(L"_commandList");
+            cmdList->SetName(std::format(L"_commandList_{}", i).c_str());
             if (!CheckForRealObject(__FUNCTION__, cmdList, (IUnknown**) &_commandList[i]))
                 _commandList[i] = cmdList;
 

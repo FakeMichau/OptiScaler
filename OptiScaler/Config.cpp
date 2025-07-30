@@ -648,7 +648,7 @@ bool Config::SaveIni()
             else if (FGOutputHeld.value() == FGOutput::Nukems)
                 FGOutputString = "Nukems";
         }
-        ini.SetValue("FrameGen", "FGOutput", FGInputString.c_str());
+        ini.SetValue("FrameGen", "FGOutput", FGOutputString.c_str());
     }
 
     // OptiFG

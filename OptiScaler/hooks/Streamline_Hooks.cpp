@@ -12,9 +12,16 @@
 #include <sl1_reflex.h>
 #include "include/sl.param/parameters.h"
 
+sl::RenderAPI StreamlineHooks::renderApi = sl::RenderAPI::eCount;
+
 // interposer
 decltype(&slInit) StreamlineHooks::o_slInit = nullptr;
 decltype(&slSetTag) StreamlineHooks::o_slSetTag = nullptr;
+decltype(&slEvaluateFeature) StreamlineHooks::o_slEvaluateFeature = nullptr;
+decltype(&slAllocateResources) StreamlineHooks::o_slAllocateResources = nullptr;
+decltype(&slSetConstants) StreamlineHooks::o_slSetConstants = nullptr;
+decltype(&slSetD3DDevice) StreamlineHooks::o_slSetD3DDevice = nullptr;
+
 decltype(&sl1::slInit) StreamlineHooks::o_slInit_sl1 = nullptr;
 
 sl::PFun_LogMessageCallback* StreamlineHooks::o_logCallback = nullptr;
@@ -27,7 +34,6 @@ StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_dlss_slOnPluginLoad = nul
 // DLSSG
 StreamlineHooks::PFN_slGetPluginFunction StreamlineHooks::o_dlssg_slGetPluginFunction = nullptr;
 StreamlineHooks::PFN_slOnPluginLoad StreamlineHooks::o_dlssg_slOnPluginLoad = nullptr;
-decltype(&slSetConstants) StreamlineHooks::o_slSetConstants = nullptr;
 decltype(&slDLSSGSetOptions) StreamlineHooks::o_slDLSSGSetOptions = nullptr;
 
 // Reflex
@@ -96,16 +102,23 @@ sl::Result StreamlineHooks::hkslInit(sl::Preferences* pref, uint64_t sdkVersion)
     pref->logLevel = sl::LogLevel::eCount;
     pref->logMessageCallback = &streamlineLogCallback;
 
-    State::Instance().slFGInputs.setEngineType(pref->engine);
+    // renderAPI is optional so need to be careful, should only matter for Vulkan
+    renderApi = pref->renderAPI;
+    State::Instance().slFGInputs.reportEngineType(pref->engine);
 
     return o_slInit(*pref, sdkVersion);
 }
 
 // TODO: add support for slSetTagForFrame
-// TODO: check api - dx12/vk
 sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::ResourceTag* tags, uint32_t numTags,
     sl::CommandBuffer* cmdBuffer)
 {
+    if (renderApi != sl::RenderAPI::eD3D12)
+    {
+        LOG_ERROR("hkslSetTag only supports DX12");
+        return o_slSetTag(viewport, tags, numTags, cmdBuffer);
+    }
+
     for (uint32_t i = 0; i < numTags; i++)
     {
         // Cyberpunk hudless state fix for RDNA 2
@@ -132,6 +145,37 @@ sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::Resourc
         // TODO: any use for kBufferTypeUIColorAndAlpha ???
     }
     auto result = o_slSetTag(viewport, tags, numTags, cmdBuffer);
+    return result;
+}
+
+sl::Result StreamlineHooks::hkslEvaluateFeature(sl::Feature feature, const sl::FrameToken& frame,
+                                                const sl::BaseStructure** inputs, uint32_t numInputs,
+                                                sl::CommandBuffer* cmdBuffer)
+{
+    LOG_FUNC();
+    auto result = o_slEvaluateFeature(feature, frame, inputs, numInputs, cmdBuffer);
+    return result;
+}
+
+sl::Result StreamlineHooks::hkslAllocateResources(sl::CommandBuffer* cmdBuffer, sl::Feature feature,
+                                                  const sl::ViewportHandle& viewport)
+{
+    LOG_FUNC();
+    auto result = o_slAllocateResources(cmdBuffer, feature, viewport);
+    return result;
+}
+
+sl::Result StreamlineHooks::hkslGetNativeInterface(void* proxyInterface, void** baseInterface) 
+{
+    LOG_FUNC();
+    auto result = o_slGetNativeInterface(proxyInterface, baseInterface);
+    return result;
+}
+
+sl::Result StreamlineHooks::hkslSetD3DDevice(void* d3dDevice) 
+{
+    LOG_FUNC();
+    auto result = o_slSetD3DDevice(d3dDevice);
     return result;
 }
 
@@ -332,6 +376,10 @@ sl::Result StreamlineHooks::hkslSetConstants(const sl::Constants& values, const 
     LOG_TRACE("called with frameIndex: {}", frameIndex);
 
     State::Instance().slFGInputs.setConstants(values);
+
+    auto fg = State::Instance().currentFG;
+    if (fg != nullptr)
+        fg->Present(); // clear readiness for the next frames
 
     return o_slSetConstants(values, frame, viewport);
 }
@@ -537,12 +585,6 @@ void* StreamlineHooks::hkcommon_slGetPluginFunction(const char* functionName)
         return &hkcommon_slSetParameters_sl1;
     }
 
-    if (strcmp(functionName, "slSetConstants") == 0)
-    {
-        o_slSetConstants = (decltype(&slSetConstants)) o_common_slGetPluginFunction(functionName);
-        return &hkslSetConstants;
-    }
-
     return o_common_slGetPluginFunction(functionName);
 }
 
@@ -643,18 +685,45 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
             o_slSetTag =
                 reinterpret_cast<decltype(&slSetTag)>(KernelBaseProxy::GetProcAddress_()(slInterposer, "slSetTag"));
             o_slInit = reinterpret_cast<decltype(&slInit)>(KernelBaseProxy::GetProcAddress_()(slInterposer, "slInit"));
+            o_slShutdown =
+                reinterpret_cast<decltype(&slShutdown)>(KernelBaseProxy::GetProcAddress_()(slInterposer, "slShutdown"));
+            o_slEvaluateFeature = reinterpret_cast<decltype(&slEvaluateFeature)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slEvaluateFeature"));
+            o_slAllocateResources = reinterpret_cast<decltype(&slAllocateResources)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slAllocateResources"));
+            o_slSetConstants = reinterpret_cast<decltype(&slSetConstants)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slSetConstants"));
+            o_slGetNativeInterface = reinterpret_cast<decltype(&slGetNativeInterface)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slGetNativeInterface"));
+            o_slSetD3DDevice = reinterpret_cast<decltype(&slSetD3DDevice)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slSetD3DDevice"));
 
-            if (o_slSetTag != nullptr && o_slInit != nullptr)
+            if (o_slInit != nullptr)
             {
                 LOG_TRACE("Hooking v2");
                 DetourTransactionBegin();
                 DetourUpdateThread(GetCurrentThread());
 
-                if (Config::Instance()->FGInput.value_or_default() == FGInput::Nukems ||
-                    Config::Instance()->FGInput.value_or_default() == FGInput::DLSSG)
+                if (o_slSetTag != nullptr && (Config::Instance()->FGInput.value_or_default() == FGInput::Nukems ||
+                    Config::Instance()->FGInput.value_or_default() == FGInput::DLSSG))
                     DetourAttach(&(PVOID&) o_slSetTag, hkslSetTag);
 
                 DetourAttach(&(PVOID&) o_slInit, hkslInit);
+
+                if (o_slEvaluateFeature != nullptr)
+                    DetourAttach(&(PVOID&) o_slEvaluateFeature, hkslEvaluateFeature);
+
+                if (o_slAllocateResources != nullptr)
+                    DetourAttach(&(PVOID&) o_slAllocateResources, hkslAllocateResources);
+
+                if (o_slSetConstants != nullptr)
+                    DetourAttach(&(PVOID&) o_slSetConstants, hkslSetConstants);
+
+                if (o_slGetNativeInterface != nullptr)
+                    DetourAttach(&(PVOID&) o_slGetNativeInterface, hkslGetNativeInterface);
+
+                if (o_slSetD3DDevice != nullptr)
+                    DetourAttach(&(PVOID&) o_slSetD3DDevice, hkslSetD3DDevice);
 
                 DetourTransactionCommit();
             }

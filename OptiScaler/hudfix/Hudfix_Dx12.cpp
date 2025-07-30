@@ -63,9 +63,9 @@ bool Hudfix_Dx12::CreateObjects()
         queueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_HIGH;
 
         HRESULT hr = State::Instance().currentD3D12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&_commandQueue));
-        if (result != S_OK)
+        if (hr != S_OK)
         {
-            LOG_ERROR("CreateCommandQueue: {:X}", (unsigned long) result);
+            LOG_ERROR("CreateCommandQueue: {:X}", (unsigned long) hr);
             break;
         }
 

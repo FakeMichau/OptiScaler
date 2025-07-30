@@ -24,7 +24,7 @@ class Sl_Inputs_Dx12
     bool reportResource(const sl::ResourceTag& tag, ID3D12GraphicsCommandList* cmdBuffer);
     bool readyToDispatch();
     bool dispatchFG(ID3D12GraphicsCommandList* cmdBuffer);
-    void setEngineType(sl::EngineType type) { engineType = type; };
+    void reportEngineType(sl::EngineType type) { engineType = type; };
 
     // TODO: some shutdown and cleanup methods
 };

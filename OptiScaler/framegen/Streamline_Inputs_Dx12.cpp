@@ -197,7 +197,7 @@ bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
         return true;
     };
 
-    LOG_DEBUG("Pre camera recalc near: {}, far: {}", slConstants.value().cameraNear, slConstants.value().cameraFar);
+    LOG_TRACE("Pre camera recalc near: {}, far: {}", slConstants.value().cameraNear, slConstants.value().cameraFar);
 
     // UE seems to not be passing the correct cameraViewToClip
     // and we can't use it to calculate cameraNear and cameraFar.
@@ -215,7 +215,7 @@ bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
         slConstants.value().cameraFar = slConstants.value().cameraNear + 1.0f;
     }
 
-    LOG_DEBUG("Post camera recalc near: {}, far: {}", slConstants.value().cameraNear, slConstants.value().cameraFar);
+    LOG_TRACE("Post camera recalc near: {}, far: {}", slConstants.value().cameraNear, slConstants.value().cameraFar);
 
     fgOutput->SetCameraValues(slConstants.value().cameraNear, slConstants.value().cameraFar,
                               slConstants.value().cameraFOV, 0.0f);
