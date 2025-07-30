@@ -2,7 +2,7 @@
 #include "IFGFeature_Dx12.h"
 #include <Config.h>
 
-bool Sl_Inputs_Dx12::setConstants(const sl::Constants& values) 
+bool Sl_Inputs_Dx12::setConstants(const sl::Constants& values)
 {
     slConstants = sl::Constants {};
 
@@ -20,7 +20,7 @@ bool Sl_Inputs_Dx12::setConstants(const sl::Constants& values)
 }
 
 bool Sl_Inputs_Dx12::evaluateState(ID3D12Device* device)
-{ 
+{
     auto fgOutput = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
 
     if (fgOutput == nullptr)
@@ -38,8 +38,8 @@ bool Sl_Inputs_Dx12::evaluateState(ID3D12Device* device)
     fgConstants.displayWidth = 0;
     fgConstants.displayHeight = 0;
 
-    //if ()
-    //    fgConstants.flags |= FG_Flags::Hdr;
+    // if ()
+    //     fgConstants.flags |= FG_Flags::Hdr;
 
     if (slConstants.value().depthInverted)
         fgConstants.flags |= FG_Flags::InvertedDepth;
@@ -79,8 +79,8 @@ bool Sl_Inputs_Dx12::reportResource(const sl::ResourceTag& tag, ID3D12GraphicsCo
     {
         auto hudlessResource = (ID3D12Resource*) tag.resource->native;
 
-        fgOutput->SetHudless(cmdBuffer, hudlessResource,
-                        (D3D12_RESOURCE_STATES) tag.resource->state, tag.lifecycle == sl::eOnlyValidNow);
+        fgOutput->SetHudless(cmdBuffer, hudlessResource, (D3D12_RESOURCE_STATES) tag.resource->state,
+                             tag.lifecycle == sl::eOnlyValidNow);
         fgOutput->SetHudlessReady();
 
         auto static lastFormat = DXGI_FORMAT_UNKNOWN;
@@ -95,16 +95,15 @@ bool Sl_Inputs_Dx12::reportResource(const sl::ResourceTag& tag, ID3D12GraphicsCo
         }
 
         lastFormat = format;
-    } 
+    }
     else if (tag.type == sl::kBufferTypeDepth || tag.type == sl::kBufferTypeHiResDepth ||
-        tag.type == sl::kBufferTypeLinearDepth)
+             tag.type == sl::kBufferTypeLinearDepth)
     {
         auto depthResource = (ID3D12Resource*) tag.resource->native;
 
         Config::Instance()->FGMakeDepthCopy.set_volatile_value(tag.lifecycle == sl::eOnlyValidNow);
 
-        fgOutput->SetDepth(cmdBuffer, depthResource,
-                        (D3D12_RESOURCE_STATES) tag.resource->state);
+        fgOutput->SetDepth(cmdBuffer, depthResource, (D3D12_RESOURCE_STATES) tag.resource->state);
         fgOutput->SetDepthReady();
     }
     else if (tag.type == sl::kBufferTypeMotionVectors)
@@ -115,15 +114,14 @@ bool Sl_Inputs_Dx12::reportResource(const sl::ResourceTag& tag, ID3D12GraphicsCo
 
         Config::Instance()->FGMakeMVCopy.set_volatile_value(tag.lifecycle == sl::eOnlyValidNow);
 
-        fgOutput->SetVelocity(cmdBuffer, mvResource,
-                        (D3D12_RESOURCE_STATES) tag.resource->state);
+        fgOutput->SetVelocity(cmdBuffer, mvResource, (D3D12_RESOURCE_STATES) tag.resource->state);
         fgOutput->SetVelocityReady();
     }
 
-    return true; 
+    return true;
 }
 
-bool Sl_Inputs_Dx12::readyToDispatch() 
+bool Sl_Inputs_Dx12::readyToDispatch()
 {
     auto fgOutput = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
 
@@ -153,7 +151,7 @@ bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
             return false;
 
         float projMatrix[4][4];
-        memcpy(projMatrix, (void*)&slConstants.value().cameraViewToClip, sizeof(projMatrix));
+        memcpy(projMatrix, (void*) &slConstants.value().cameraViewToClip, sizeof(projMatrix));
 
         // BUG: Various RTX Remix-based games pass in an identity matrix which is completely useless. No
         // idea why.
@@ -227,9 +225,8 @@ bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
 
     fgOutput->SetCameraData(reinterpret_cast<float*>(&slConstants.value().cameraPos),
                             reinterpret_cast<float*>(&slConstants.value().cameraUp),
-                            reinterpret_cast<float*>(&slConstants.value().cameraRight), 
-                            reinterpret_cast<float*>(&slConstants.value().cameraFwd)
-    );
+                            reinterpret_cast<float*>(&slConstants.value().cameraRight),
+                            reinterpret_cast<float*>(&slConstants.value().cameraFwd));
 
     return fgOutput->DispatchHudless(cmdBuffer, true, State::Instance().lastFrameTime);
 }

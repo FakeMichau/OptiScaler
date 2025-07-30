@@ -70,8 +70,8 @@ class State
     float lastFsrCameraFar = 0.0f;
 
     // Frame Generation
-    //FGInput desiredFgInput = FGInput::NoFG;
-    //FGOutput desiredFgOutput = FGOutput::NoFG;
+    // FGInput desiredFgInput = FGInput::NoFG;
+    // FGOutput desiredFgOutput = FGOutput::NoFG;
     FGInput activeFgInput = FGInput::NoFG;
     FGOutput activeFgOutput = FGOutput::NoFG;
 

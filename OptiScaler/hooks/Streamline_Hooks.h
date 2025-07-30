@@ -63,7 +63,7 @@ class StreamlineHooks
                                           sl::CommandBuffer* cmdBuffer);
 
     static sl::Result hkslAllocateResources(sl::CommandBuffer* cmdBuffer, sl::Feature feature,
-                                     const sl::ViewportHandle& viewport);
+                                            const sl::ViewportHandle& viewport);
 
     static sl::Result hkslGetNativeInterface(void* proxyInterface, void** baseInterface);
 
@@ -83,7 +83,7 @@ class StreamlineHooks
 
     static bool hkdlssg_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON);
     static sl::Result hkslSetConstants(const sl::Constants& values, const sl::FrameToken& frame,
-                                      const sl::ViewportHandle& viewport);
+                                       const sl::ViewportHandle& viewport);
     static sl::Result hkslDLSSGSetOptions(const sl::ViewportHandle& viewport, const sl::DLSSGOptions& options);
     static void* hkdlssg_slGetPluginFunction(const char* functionName);
 

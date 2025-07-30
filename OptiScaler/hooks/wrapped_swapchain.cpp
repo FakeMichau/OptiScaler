@@ -323,8 +323,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGISwapChain4::ResizeBuffers(UINT BufferCount
         State::Instance().FGresetCapturedResources = true;
         State::Instance().FGonlyUseCapturedResources = false;
 
-        //if (State::Instance().currentFeature != nullptr)
-            State::Instance().FGchanged = true;
+        // if (State::Instance().currentFeature != nullptr)
+        State::Instance().FGchanged = true;
     }
 
     if (ClearTrig != nullptr)
@@ -588,7 +588,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGISwapChain4::ResizeBuffers1(UINT BufferCoun
         OwnedLockGuard lock(_localMutex, 2);
 #endif
 
-    if (State::Instance().activeFgOutput == FGOutput::FSRFG && Config::Instance()->FGUseMutexForSwapchain.value_or_default())
+    if (State::Instance().activeFgOutput == FGOutput::FSRFG &&
+        Config::Instance()->FGUseMutexForSwapchain.value_or_default())
     {
         LOG_TRACE("Waiting ffxMutex 3, current: {}", State::Instance().currentFG->Mutex.getOwner());
         State::Instance().currentFG->Mutex.lock(3);
@@ -604,8 +605,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGISwapChain4::ResizeBuffers1(UINT BufferCoun
         State::Instance().FGresetCapturedResources = true;
         State::Instance().FGonlyUseCapturedResources = false;
 
-        //if (State::Instance().currentFeature != nullptr)
-            State::Instance().FGchanged = true;
+        // if (State::Instance().currentFeature != nullptr)
+        State::Instance().FGchanged = true;
     }
 
     if (ClearTrig != nullptr)

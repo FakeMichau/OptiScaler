@@ -283,7 +283,8 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
         LOG_TRACE("Accuired FG->Mutex: {}, fgMutexReleaseFrame: {}", fg->Mutex.getOwner(), _releaseMutexTargetFrame);
     }
 
-    if (willPresent && State::Instance().currentCommandQueue != nullptr && State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->FGAsync.value_or_default() &&
+    if (willPresent && State::Instance().currentCommandQueue != nullptr &&
+        State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->FGAsync.value_or_default() &&
         fg != nullptr && fg->IsActive() && fg->TargetFrame() < fg->FrameCount() &&
         fg->LastDispatchedFrame() != fg->FrameCount() && fg->UpscalerInputsReady())
     {
@@ -444,8 +445,7 @@ static HRESULT hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Fla
 
     // Upscaler GPU time computation
     if (State::Instance().activeFgInput != FGInput::Upscaler && HooksDx::dx12UpscaleTrig &&
-        HooksDx::readbackBuffer != nullptr &&
-        HooksDx::queryHeap != nullptr && cq != nullptr)
+        HooksDx::readbackBuffer != nullptr && HooksDx::queryHeap != nullptr && cq != nullptr)
     {
         UINT64* timestampData;
         HooksDx::readbackBuffer->Map(0, nullptr, reinterpret_cast<void**>(&timestampData));
@@ -1142,8 +1142,7 @@ static HRESULT hkCreateSwapChainForHwnd(IDXGIFactory* This, IUnknown* pDevice, H
 
     ID3D12CommandQueue* cq = nullptr;
     if (State::Instance().activeFgOutput == FGOutput::FSRFG && !_skipFGSwapChainCreation &&
-        FfxApiProxy::InitFfxDx12() &&
-        pDevice->QueryInterface(IID_PPV_ARGS(&cq)) == S_OK)
+        FfxApiProxy::InitFfxDx12() && pDevice->QueryInterface(IID_PPV_ARGS(&cq)) == S_OK)
     {
         cq->SetName(L"GameQueueHwnd");
         cq->Release();

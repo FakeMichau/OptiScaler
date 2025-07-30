@@ -631,9 +631,9 @@ bool Config::SaveIni()
                 FGInputString = "NoFG";
             else if (FGInputHeld.value() == FGInput::Upscaler)
                 FGInputString = "Upscaler";
-            else if(FGInputHeld.value() == FGInput::Nukems)
+            else if (FGInputHeld.value() == FGInput::Nukems)
                 FGInputString = "Nukems";
-            else if(FGInputHeld.value() == FGInput::DLSSG)
+            else if (FGInputHeld.value() == FGInput::DLSSG)
                 FGInputString = "DLSSG";
         }
         ini.SetValue("FrameGen", "FGInput", FGInputString.c_str());

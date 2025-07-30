@@ -20,7 +20,7 @@ struct Dx12Resource
 
     void setState(D3D12_RESOURCE_STATES state) { this->state = state; }
     D3D12_RESOURCE_STATES getState() { return state; }
-    FfxApiResourceState getFfxApiState() 
+    FfxApiResourceState getFfxApiState()
     {
         switch (state)
         {

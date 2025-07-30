@@ -395,8 +395,7 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
     if (useHudless && _paramHudless[fIndex].resource != nullptr)
     {
         LOG_TRACE("Using hudless: {:X}", (size_t) _paramHudless[fIndex].resource);
-        auto state = 
-        m_FrameGenerationConfig.HUDLessColor =
+        auto state = m_FrameGenerationConfig.HUDLessColor =
             ffxApiGetResourceDX12(_paramHudless[fIndex].resource, _paramHudless[fIndex].getFfxApiState());
         _paramHudless[fIndex] = {};
     }
@@ -547,7 +546,7 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
 
         retCode = FfxApiProxy::D3D12_Dispatch()(&_fgContext, &dfgPrepare.header);
         LOG_DEBUG("D3D12_Dispatch result: {0}, frame: {1}, fIndex: {2}, commandList: {3:X}", retCode, _frameCount,
-                    fIndex, (size_t) dfgPrepare.commandList);
+                  fIndex, (size_t) dfgPrepare.commandList);
 
         if (retCode == FFX_API_RETURN_OK)
             SetHudlessDispatchReady();
@@ -588,7 +587,7 @@ ffxReturnCode_t FSRFG_Dx12::DispatchCallback(ffxDispatchDescFrameGeneration* par
 #endif
 
     LOG_DEBUG("frameID: {}, commandList: {:X}, numGeneratedFrames: {}", params->frameID, (size_t) params->commandList,
-            params->numGeneratedFrames);
+              params->numGeneratedFrames);
 
     // check for status
     if (!Config::Instance()->FGEnabled.value_or_default() || _fgContext == nullptr || State::Instance().SCchanged
@@ -602,9 +601,9 @@ ffxReturnCode_t FSRFG_Dx12::DispatchCallback(ffxDispatchDescFrameGeneration* par
     }
 
     // If fg is active but upscaling paused
-    if ((State::Instance().currentFeature == nullptr && State::Instance().activeFgInput == FGInput::Upscaler) || !_isActive ||
-        params->frameID == _lastUpscaledFrameId ||
-        State::Instance().FGchanged || (State::Instance().currentFeature && State::Instance().currentFeature->FrameCount() == 0))
+    if ((State::Instance().currentFeature == nullptr && State::Instance().activeFgInput == FGInput::Upscaler) ||
+        !_isActive || params->frameID == _lastUpscaledFrameId || State::Instance().FGchanged ||
+        (State::Instance().currentFeature && State::Instance().currentFeature->FrameCount() == 0))
     {
         LOG_WARN("(FG) Callback without active FG! fIndex:{}", fIndex);
 

@@ -5,11 +5,11 @@
 
 // camera data
 // hudless, depth, color, ui(?)
-// 
+//
 // init values
 // fg feature creation
 // fg dispatch
-// 
+//
 
 class Sl_Inputs_Dx12
 {

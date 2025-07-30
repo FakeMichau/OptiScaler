@@ -54,7 +54,7 @@ char* StreamlineHooks::trimStreamlineLog(const char* msg)
 {
     int bracket_count = 0;
 
-    char* result = (char*)malloc(strlen(msg) + 1);
+    char* result = (char*) malloc(strlen(msg) + 1);
     if (!result)
         return NULL;
 
@@ -112,7 +112,7 @@ sl::Result StreamlineHooks::hkslInit(sl::Preferences* pref, uint64_t sdkVersion)
 
 // TODO: add support for slSetTagForFrame
 sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::ResourceTag* tags, uint32_t numTags,
-    sl::CommandBuffer* cmdBuffer)
+                                       sl::CommandBuffer* cmdBuffer)
 {
     if (renderApi != sl::RenderAPI::eD3D12)
     {
@@ -126,16 +126,16 @@ sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::Resourc
         if (State::Instance().gameQuirks & GameQuirk::CyberpunkHudlessStateOverride &&
             tags[i].resource->state ==
                 (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) &&
-            tags[i].type == sl::kBufferTypeHUDLessColor) 
+            tags[i].type == sl::kBufferTypeHUDLessColor)
         {
             tags[i].resource->state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             LOG_TRACE("Changing hudless resource state");
         }
 
-        if (State::Instance().activeFgInput == FGInput::DLSSG && (tags[i].type == sl::kBufferTypeHUDLessColor ||
-            tags[i].type == sl::kBufferTypeDepth ||
-            tags[i].type == sl::kBufferTypeHiResDepth || tags[i].type == sl::kBufferTypeLinearDepth ||
-            tags[i].type == sl::kBufferTypeMotionVectors))
+        if (State::Instance().activeFgInput == FGInput::DLSSG &&
+            (tags[i].type == sl::kBufferTypeHUDLessColor || tags[i].type == sl::kBufferTypeDepth ||
+             tags[i].type == sl::kBufferTypeHiResDepth || tags[i].type == sl::kBufferTypeLinearDepth ||
+             tags[i].type == sl::kBufferTypeMotionVectors))
         {
             State::Instance().slFGInputs.reportResource(tags[i], (ID3D12GraphicsCommandList*) cmdBuffer);
 
@@ -166,14 +166,14 @@ sl::Result StreamlineHooks::hkslAllocateResources(sl::CommandBuffer* cmdBuffer, 
     return result;
 }
 
-sl::Result StreamlineHooks::hkslGetNativeInterface(void* proxyInterface, void** baseInterface) 
+sl::Result StreamlineHooks::hkslGetNativeInterface(void* proxyInterface, void** baseInterface)
 {
     LOG_FUNC();
     auto result = o_slGetNativeInterface(proxyInterface, baseInterface);
     return result;
 }
 
-sl::Result StreamlineHooks::hkslSetD3DDevice(void* d3dDevice) 
+sl::Result StreamlineHooks::hkslSetD3DDevice(void* d3dDevice)
 {
     LOG_FUNC();
     auto result = o_slSetD3DDevice(d3dDevice);
@@ -370,7 +370,7 @@ bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSO
 }
 
 sl::Result StreamlineHooks::hkslSetConstants(const sl::Constants& values, const sl::FrameToken& frame,
-                                           const sl::ViewportHandle& viewport)
+                                             const sl::ViewportHandle& viewport)
 {
     unsigned int frameIndex = frame;
 
@@ -704,7 +704,7 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
                 DetourUpdateThread(GetCurrentThread());
 
                 if (o_slSetTag != nullptr && (Config::Instance()->FGInput.value_or_default() == FGInput::Nukems ||
-                    Config::Instance()->FGInput.value_or_default() == FGInput::DLSSG))
+                                              Config::Instance()->FGInput.value_or_default() == FGInput::DLSSG))
                     DetourAttach(&(PVOID&) o_slSetTag, hkslSetTag);
 
                 DetourAttach(&(PVOID&) o_slInit, hkslInit);

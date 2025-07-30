@@ -1699,8 +1699,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
     if (evalResult && State::Instance().activeFgInput == FGInput::Upscaler)
     {
         // FG Dispatch
-        if (fg != nullptr && fg->IsActive() &&
-            State::Instance().activeFgOutput == FGOutput::FSRFG &&
+        if (fg != nullptr && fg->IsActive() && State::Instance().activeFgOutput == FGOutput::FSRFG &&
             Config::Instance()->OverlayMenu.value_or_default() && Config::Instance()->FGEnabled.value_or_default() &&
             fg->TargetFrame() < fg->FrameCount() && State::Instance().currentSwapchain != nullptr)
         {

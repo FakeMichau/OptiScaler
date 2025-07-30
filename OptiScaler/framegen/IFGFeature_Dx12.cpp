@@ -61,8 +61,9 @@ bool IFGFeature_Dx12::CreateBufferResourceWithSize(ID3D12Device* device, ID3D12R
     return true;
 }
 
-bool IFGFeature_Dx12::CreateBufferResource(ID3D12Device* device, ID3D12Resource* source, D3D12_RESOURCE_STATES initialState,
-                                           ID3D12Resource** target, bool UAV, bool depth)
+bool IFGFeature_Dx12::CreateBufferResource(ID3D12Device* device, ID3D12Resource* source,
+                                           D3D12_RESOURCE_STATES initialState, ID3D12Resource** target, bool UAV,
+                                           bool depth)
 {
     if (device == nullptr || source == nullptr)
         return false;
@@ -161,8 +162,7 @@ void IFGFeature_Dx12::SetVelocity(ID3D12GraphicsCommandList* cmdList, ID3D12Reso
     if (State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->FGResourceFlip.value_or_default() &&
         _device != nullptr &&
         CreateBufferResource(_device, velocity, _paramVelocityCopy[index].getState(),
-                             &_paramVelocityCopy[index].resource, true,
-                             false))
+                             &_paramVelocityCopy[index].resource, true, false))
     {
         if (_mvFlip.get() == nullptr)
         {
@@ -214,7 +214,7 @@ void IFGFeature_Dx12::SetDepth(ID3D12GraphicsCommandList* cmdList, ID3D12Resourc
         return;
 
     // TODO: hack for DRG
-    //if (state & D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+    // if (state & D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
     //    state |= D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 
     depth->SetName(std::format(L"DepthResource_{}", index).c_str());
