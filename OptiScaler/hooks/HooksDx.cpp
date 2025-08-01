@@ -266,12 +266,6 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
     if (willPresent && fg != nullptr && fg->IsActive() &&
         Config::Instance()->FGUseMutexForSwapchain.value_or_default() && fg->Mutex.getOwner() != 2)
     {
-        IDXGISwapChain3* swapChain3 = nullptr;
-        ((IDXGISwapChain*) This)->QueryInterface(IID_PPV_ARGS(&swapChain3));
-        auto index = swapChain3->GetCurrentBackBufferIndex();
-
-        fg->ExecuteCmdList(index % COMMAND_BUFFER_COUNT);
-
         LOG_TRACE("Waiting FG->Mutex 2, current: {}", fg->Mutex.getOwner());
         fg->Mutex.lock(2);
 
@@ -290,22 +284,33 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
     }
 
     if (willPresent && State::Instance().currentCommandQueue != nullptr &&
-        State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->FGAsync.value_or_default() &&
-        fg != nullptr && fg->IsActive() && fg->TargetFrame() < fg->FrameCount() &&
-        fg->LastDispatchedFrame() != fg->FrameCount() && fg->UpscalerInputsReady())
+        State::Instance().activeFgInput == FGInput::Upscaler && fg != nullptr && fg->IsActive() &&
+        fg->TargetFrame() < fg->FrameCount() && fg->LastDispatchedFrame() != fg->FrameCount() &&
+        fg->UpscalerInputsReady())
     {
         State::Instance().fgTrigSource = "Present";
         fg->Present();
 
         LOG_DEBUG("Dispatch hudless fg");
-        if (fg->DispatchHudless(nullptr, false, State::Instance().lastFrameTime))
-        {
-            auto result = fg->ExecuteHudlessCmdList(State::Instance().currentCommandQueue);
 
-            if (result != nullptr)
-                State::Instance().currentCommandQueue->ExecuteCommandLists(1, &result);
+        if (fg->Dispatch(nullptr, false, State::Instance().lastFrameTime))
+        {
+            auto cmdList = fg->GetCommandList();
+            State::Instance().currentCommandQueue->ExecuteCommandLists(1, &cmdList);
         }
     }
+
+    //if (willPresent && State::Instance().currentCommandQueue != nullptr &&
+    //    State::Instance().activeFgInput == FGInput::DLSSG && fg != nullptr)
+    //{
+    //    auto cmdList = fg->GetCommandList();
+
+    //    if (cmdList)
+    //    {
+    //        LOG_DEBUG("Executing cmdlist for Streamline inputs: {:X}", (uint64_t) cmdList);
+    //        State::Instance().currentCommandQueue->ExecuteCommandLists(1, &cmdList);
+    //    }
+    //}
 
     if (willPresent && State::Instance().activeFgInput == FGInput::Upscaler)
     {
@@ -1655,7 +1660,9 @@ static void HookToDevice(ID3D12Device* InDevice)
         DetourTransactionCommit();
     }
 
-    if (State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->OverlayMenu.value_or_default())
+    if ((State::Instance().activeFgInput == FGInput::Upscaler ||
+         State::Instance().activeFgInput == FGInput::DLSSG) &&
+        Config::Instance()->OverlayMenu.value_or_default())
         ResTrack_Dx12::HookDevice(InDevice);
 }
 

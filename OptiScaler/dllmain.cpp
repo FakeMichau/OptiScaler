@@ -29,6 +29,7 @@
 
 #include <hooks/HooksDx.h>
 #include <hooks/HooksVk.h>
+#include <hooks/Ntdll_Hooks.h>
 #include <hooks/Kernel_Hooks.h>
 
 #include <nvapi/NvApiHooks.h>
@@ -41,6 +42,7 @@ static std::vector<HMODULE> _asiHandles;
 
 typedef const char*(CDECL* PFN_wine_get_version)(void);
 typedef void (*PFN_InitializeASI)(void);
+typedef bool (*PFN_PatchResult)(void);
 
 static inline void* ManualGetProcAddress(HMODULE hModule, const char* functionName)
 {
@@ -195,9 +197,29 @@ void LoadAsiPlugins()
                 _asiHandles.push_back(hMod);
 
                 auto init = (PFN_InitializeASI) KernelBaseProxy::GetProcAddress_()(hMod, "InitializeASI");
+                auto patchResult = (PFN_PatchResult) KernelBaseProxy::GetProcAddress_()(hMod, "PatchResult");
 
                 if (init != nullptr)
                     init();
+
+                if (!State::Instance().isRunningOnNvidia && patchResult != nullptr)
+                {
+                    auto pr = patchResult();
+
+                    if (pr)
+                    {
+                        LOG_INFO("Game patching is successful, disabling spoofing");
+
+                        if (!Config::Instance()->DxgiSpoofing.has_value())
+                            Config::Instance()->DxgiSpoofing.set_volatile_value(false);
+
+                        if (!Config::Instance()->VulkanSpoofing.has_value())
+                            Config::Instance()->VulkanSpoofing.set_volatile_value(false);
+
+                        if (!Config::Instance()->VulkanExtensionSpoofing.has_value())
+                            Config::Instance()->VulkanExtensionSpoofing.set_volatile_value(false);
+                    }
+                }
             }
             else
             {
@@ -214,6 +236,8 @@ static void CheckWorkingMode()
 
     if (Config::Instance()->EarlyHooking.value_or_default())
     {
+
+        NtdllHooks::Hook();
         KernelHooks::Hook();
         KernelHooks::HookBase();
     }
@@ -860,7 +884,10 @@ static void CheckWorkingMode()
 
             // Hook kernel32 methods
             if (!Config::Instance()->EarlyHooking.value_or_default())
+            {
+                NtdllHooks::Hook();
                 KernelHooks::Hook();
+            }
 
             // For Agility SDK Upgrade
             if (Config::Instance()->FsrAgilitySDKUpgrade.value_or_default())
@@ -976,6 +1003,9 @@ static void CheckQuirks()
 
     if (quirks & GameQuirk::DontUseUnrealBarriers && !Config::Instance()->MVResourceBarrier.has_value())
         Config::Instance()->MVResourceBarrier.set_volatile_value(128);
+
+    if (quirks & GameQuirk::SkipFirst10Frames && !Config::Instance()->SkipFirstFrames.has_value())
+        Config::Instance()->SkipFirstFrames.set_volatile_value(10);
 
     State::Instance().gameQuirks = quirks;
 }

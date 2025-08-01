@@ -427,6 +427,8 @@ class NVNGXProxy
 
         if (_dll == nullptr)
         {
+            State::DisableChecks(333);
+
             do
             {
                 // From DLSS Enabler
@@ -552,6 +554,8 @@ class NVNGXProxy
                              (ULONG64) _dll);
 
             } while (false);
+
+            State::EnableChecks(333);
         }
 
         if (_dll != nullptr)

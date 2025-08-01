@@ -21,6 +21,7 @@ enum class GameQuirk : uint64_t
     DisableOptiXessPipelineCreation,
     DontUseNTShared,
     DontUseUnrealBarriers,
+    SkipFirst10Frames,
 
     // Quirks that are applied deeper in code
     CyberpunkHudlessStateOverride,
@@ -141,6 +142,10 @@ static const QuirkEntry quirkTable[] = {
     // STAR WARS Jedi: Survivor
     QUIRK_ENTRY("jedisurvivor.exe", GameQuirk::ForceAutoExposure),
 
+    // Death Stranding and Directors Cut
+    // no spoof needed for DLSS inputs
+    QUIRK_ENTRY("ds.exe", GameQuirk::DisableDxgiSpoofing),
+
     // The Callisto Protocol
     // FSR2 only, no spoof needed
     QUIRK_ENTRY("thecallistoprotocol-win64-shipping.exe", GameQuirk::DisableUseFsrInputValues,
@@ -161,6 +166,11 @@ static const QuirkEntry quirkTable[] = {
     // Returnal
     // no spoof needed for DLSS inputs, but no DLSSG and Reflex
     QUIRK_ENTRY("returnal-win64-shipping.exe", GameQuirk::DisableDxgiSpoofing, GameQuirk::DontUseUnrealBarriers),
+
+    // WUCHANG: Fallen Feathers
+    // Skip 1 frame use of upscaler which cause crash
+    QUIRK_ENTRY("project_plague-deck-shipping.exe", GameQuirk::SkipFirst10Frames),
+    QUIRK_ENTRY("project_plague-win64-shipping.exe", GameQuirk::SkipFirst10Frames),
 
     // UNCHARTED: Legacy of Thieves Collection
     // no spoof needed for DLSS inputs
@@ -253,6 +263,8 @@ static void printQuirks(flag_set<GameQuirk>& quirks)
         spdlog::info("Quirk: Don't use NTShared enabled");
     if (quirks & GameQuirk::DontUseUnrealBarriers)
         spdlog::info("Quirk: Don't use resource barrier fix for Unreal Engine games");
+    if (quirks & GameQuirk::SkipFirst10Frames)
+        spdlog::info("Quirk: Skipping upscaling for first 10 frames");
 
     return;
 }

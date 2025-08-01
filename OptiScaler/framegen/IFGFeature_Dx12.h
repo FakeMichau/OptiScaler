@@ -5,7 +5,6 @@
 #include <upscalers/IFeature.h>
 
 #include <shaders/resource_flip/RF_Dx12.h>
-#include <misc/CommandListManager.h>
 
 #include <dxgi1_6.h>
 #include <d3d12.h>
@@ -62,12 +61,12 @@ class IFGFeature_Dx12 : public virtual IFGFeature
     IDXGISwapChain* _swapChain = nullptr;
     ID3D12CommandQueue* _gameCommandQueue = nullptr;
     HWND _hwnd = NULL;
-    CommandListManager _commandManager;
 
     bool _velocityReady[BUFFER_COUNT] = { false, false, false, false };
     bool _depthReady[BUFFER_COUNT] = { false, false, false, false };
     bool _hudlessReady[BUFFER_COUNT] = { false, false, false, false };
     bool _hudlessDispatchReady[BUFFER_COUNT] = { false, false, false, false };
+    bool _noHudless[BUFFER_COUNT] = { false, false, false, false };
 
     Dx12Resource _paramVelocity[BUFFER_COUNT] {};
     Dx12Resource _paramVelocityCopy[BUFFER_COUNT] {};
@@ -100,8 +99,8 @@ class IFGFeature_Dx12 : public virtual IFGFeature
 
     virtual void EvaluateState(ID3D12Device* device, FG_Constants& fgConstants) = 0;
 
-    virtual bool Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* output, double frameTime) = 0;
-    virtual bool DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHudless, double frameTime) = 0;
+    // virtual bool Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* output, double frameTime) = 0;
+    virtual bool Dispatch(ID3D12GraphicsCommandList* cmdList, bool useHudless, double frameTime) = 0;
 
     virtual void* FrameGenerationContext() = 0;
     virtual void* SwapchainContext() = 0;
@@ -116,9 +115,9 @@ class IFGFeature_Dx12 : public virtual IFGFeature
     void SetHudless(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* hudless, D3D12_RESOURCE_STATES state,
                     bool makeCopy = false);
 
-    bool IsFGCommandList(void* cmdList);
+    ID3D12CommandList* GetCommandList();
+    bool NoHudless();
     ID3D12CommandList* ExecuteHudlessCmdList(ID3D12CommandQueue* queue = nullptr);
-    void ExecuteCmdList(int index);
 
     IFGFeature_Dx12() = default;
 

@@ -304,12 +304,6 @@ void IFGFeature_Dx12::CreateObjects(ID3D12Device* InDevice)
     if (_commandAllocators[0] != nullptr)
         ReleaseObjects();
 
-    if (!_commandManager.Initialize(InDevice, _gameCommandQueue))
-    {
-        LOG_ERROR("Command manager failed to init");
-        return;
-    }
-
     LOG_DEBUG("");
 
     do
@@ -375,21 +369,9 @@ void IFGFeature_Dx12::ReleaseObjects()
     _depthFlip.reset();
 }
 
-bool IFGFeature_Dx12::IsFGCommandList(void* cmdList)
-{
-    auto found = false;
+ID3D12CommandList* IFGFeature_Dx12::GetCommandList() { return _commandList[GetIndex()]; }
 
-    for (size_t i = 0; i < BUFFER_COUNT; i++)
-    {
-        if (_commandList[i] == cmdList)
-        {
-            found = true;
-            break;
-        }
-    }
-
-    return found;
-}
+bool IFGFeature_Dx12::NoHudless() { return _noHudless[GetIndex()]; }
 
 ID3D12CommandList* IFGFeature_Dx12::ExecuteHudlessCmdList(ID3D12CommandQueue* queue)
 {
@@ -468,5 +450,3 @@ bool IFGFeature_Dx12::ReadyForExecute()
     auto fIndex = GetIndex();
     return _velocityReady[fIndex] && _depthReady[fIndex] && _hudlessReady[fIndex];
 }
-
-void IFGFeature_Dx12::ExecuteCmdList(int index) { _commandManager.CloseAndExecute(index); }

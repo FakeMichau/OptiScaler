@@ -1732,7 +1732,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
             {
                 LOG_DEBUG("(FG) running, frame: {0}", deviceContext->feature->FrameCount());
 
-                fg->Dispatch(InCmdList, output, State::Instance().lastFrameTime);
+                fg->Dispatch(InCmdList, false, State::Instance().lastFrameTime);
             }
         }
     }

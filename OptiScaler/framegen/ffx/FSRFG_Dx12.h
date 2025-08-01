@@ -35,8 +35,8 @@ class FSRFG_Dx12 : public virtual IFGFeature_Dx12
 
     void EvaluateState(ID3D12Device* device, FG_Constants& fgConstants) override final;
 
-    bool Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* output, double frameTime) override final;
-    bool DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHudless, double frameTime) override final;
+    // bool Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* output, double frameTime) override final;
+    bool Dispatch(ID3D12GraphicsCommandList* cmdList, bool useHudless, double frameTime) override final;
 
     void* FrameGenerationContext() override final;
     void* SwapchainContext() override final;
@@ -45,7 +45,6 @@ class FSRFG_Dx12 : public virtual IFGFeature_Dx12
     void ConfigureFramePaceTuning();
 
     ffxReturnCode_t DispatchCallback(ffxDispatchDescFrameGeneration* params);
-    ffxReturnCode_t HudlessDispatchCallback(ffxDispatchDescFrameGeneration* params);
 
     FSRFG_Dx12() : IFGFeature_Dx12(), IFGFeature()
     {

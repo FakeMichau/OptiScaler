@@ -112,6 +112,9 @@ bool Config::Reload(std::filesystem::path iniPath)
         {
             FGEnabled.set_from_config(readBool("OptiFG", "Enabled"));
             FGDebugView.set_from_config(readBool("OptiFG", "DebugView"));
+            FGDebugTearLines.set_from_config(readBool("OptiFG", "DebugTearLines"));
+            FGDebugResetLines.set_from_config(readBool("OptiFG", "DebugResetLines"));
+            FGDebugPacingLines.set_from_config(readBool("OptiFG", "DebugPacingLines"));
             FGAsync.set_from_config(readBool("OptiFG", "AllowAsync"));
             FGHUDFix.set_from_config(readBool("OptiFG", "HUDFix"));
             FGHUDLimit.set_from_config(readInt("OptiFG", "HUDLimit"));
@@ -491,14 +494,27 @@ bool Config::Reload(std::filesystem::path iniPath)
 
         // Plugins
         {
-            if (auto setting = readString("Plugins", "Path", true); setting.has_value())
-            {
-                auto path = std::filesystem::path(setting.value());
+            std::filesystem::path path;
+            auto setting = readString("Plugins", "Path", true);
 
+            if (setting.has_value())
+                path = std::filesystem::path(setting.value());
+            else
+                path = std::filesystem::path(PluginPath.value_or_default());
+
+            if (setting.has_value())
+            {
                 if (path.has_root_path())
                     PluginPath.set_from_config(path.wstring());
                 else
                     PluginPath.set_from_config((Util::DllPath().parent_path() / path).wstring());
+            }
+            else
+            {
+                if (path.has_root_path())
+                    PluginPath.set_volatile_value(path.wstring());
+                else
+                    PluginPath.set_volatile_value((Util::DllPath().parent_path() / path).wstring());
             }
 
             LoadSpecialK.set_from_config(readBool("Plugins", "LoadSpecialK"));
@@ -699,6 +715,11 @@ bool Config::SaveIni()
     {
         ini.SetValue("OptiFG", "Enabled", GetBoolValue(Instance()->FGEnabled.value_for_config()).c_str());
         ini.SetValue("OptiFG", "DebugView", GetBoolValue(Instance()->FGDebugView.value_for_config()).c_str());
+        ini.SetValue("OptiFG", "DebugTearLines", GetBoolValue(Instance()->FGDebugTearLines.value_for_config()).c_str());
+        ini.SetValue("OptiFG", "DebugResetLines",
+                     GetBoolValue(Instance()->FGDebugResetLines.value_for_config()).c_str());
+        ini.SetValue("OptiFG", "DebugPacingLines",
+                     GetBoolValue(Instance()->FGDebugPacingLines.value_for_config()).c_str());
         ini.SetValue("OptiFG", "AllowAsync", GetBoolValue(Instance()->FGAsync.value_for_config()).c_str());
         ini.SetValue("OptiFG", "HUDFix", GetBoolValue(Instance()->FGHUDFix.value_for_config()).c_str());
         ini.SetValue("OptiFG", "HUDLimit", GetIntValue(Instance()->FGHUDLimit.value_for_config()).c_str());

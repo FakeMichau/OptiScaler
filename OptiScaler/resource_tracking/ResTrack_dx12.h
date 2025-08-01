@@ -240,10 +240,14 @@ class ResTrack_Dx12
     inline static ID3D12GraphicsCommandList* _commandList[BUFFER_COUNT] = { nullptr, nullptr, nullptr, nullptr };
     inline static ID3D12GraphicsCommandList* _upscalerCommandList[BUFFER_COUNT] = { nullptr, nullptr, nullptr,
                                                                                     nullptr };
+    inline static ID3D12Fence* _hudlessFence[BUFFER_COUNT] = { nullptr, nullptr, nullptr, nullptr };
+    inline static ULONG64 _lastHudlessFrame = 0;
+    inline static std::mutex _hudlessMutex;
+    inline static void* _hudlessMutexQueue = nullptr;
 
     static bool IsHudFixActive();
 
-    static bool IsFGCommandList(IUnknown* cmdList);
+    // static bool IsFGCommandList(IUnknown* cmdList);
 
     static void hkCopyDescriptors(ID3D12Device* This, UINT NumDestDescriptorRanges,
                                   D3D12_CPU_DESCRIPTOR_HANDLE* pDestDescriptorRangeStarts,

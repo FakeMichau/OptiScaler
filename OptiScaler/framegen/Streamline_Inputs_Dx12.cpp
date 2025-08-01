@@ -1,9 +1,17 @@
 #include "Streamline_Inputs_Dx12.h"
 #include "IFGFeature_Dx12.h"
 #include <Config.h>
+#include <resource_tracking/ResTrack_dx12.h>
 
 bool Sl_Inputs_Dx12::setConstants(const sl::Constants& values)
 {
+    auto fgOutput = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
+
+    if (fgOutput == nullptr)
+        return false;
+
+    fgOutput->UpdateFrameCount();
+
     slConstants = sl::Constants {};
 
     if (slConstants.has_value() && values.structVersion == slConstants.value().structVersion)
@@ -56,7 +64,6 @@ bool Sl_Inputs_Dx12::evaluateState(ID3D12Device* device)
     if (infiniteDepth)
         fgConstants.flags |= FG_Flags::InfiniteDepth;
 
-    fgOutput->UpdateFrameCount();
     fgOutput->EvaluateState(device, fgConstants);
 
     return true;
@@ -144,6 +151,9 @@ bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
     if (State::Instance().FGchanged)
         return false;
 
+    ResTrack_Dx12::SetUpscalerCmdList(cmdBuffer);
+    ResTrack_Dx12::SetHudlessCmdList(cmdBuffer);
+
     // Nukem's function, licensed under GPLv3
     auto loadCameraMatrix = [&]()
     {
@@ -228,5 +238,5 @@ bool Sl_Inputs_Dx12::dispatchFG(ID3D12GraphicsCommandList* cmdBuffer)
                             reinterpret_cast<float*>(&slConstants.value().cameraRight),
                             reinterpret_cast<float*>(&slConstants.value().cameraFwd));
 
-    return fgOutput->DispatchHudless(cmdBuffer, true, State::Instance().lastFrameTime);
+    return fgOutput->Dispatch(cmdBuffer, true, State::Instance().lastFrameTime);
 }

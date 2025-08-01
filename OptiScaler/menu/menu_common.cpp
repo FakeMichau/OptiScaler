@@ -2551,7 +2551,7 @@ bool MenuCommon::RenderMenu()
                         ImGui::SeparatorText("Frame Generation (FSR FG)");
 
                         bool fgActive = Config::Instance()->FGEnabled.value_or_default();
-                        if (ImGui::Checkbox("FG Active", &fgActive))
+                        if (ImGui::Checkbox("Active##2", &fgActive))
                         {
                             Config::Instance()->FGEnabled = fgActive;
                             LOG_DEBUG("Enabled set FGEnabled: {}", fgActive);
@@ -2728,7 +2728,7 @@ bool MenuCommon::RenderMenu()
                         ShowHelpMarker("Enable frame generation (OptiFG)");
 
                         bool fgHudfix = Config::Instance()->FGHUDFix.value_or_default();
-                        if (ImGui::Checkbox("FG HUD Fix", &fgHudfix))
+                        if (ImGui::Checkbox("HUDFix", &fgHudfix))
                         {
                             Config::Instance()->FGHUDFix = fgHudfix;
                             LOG_DEBUG("Enabled set FGHUDFix: {}", fgHudfix);
@@ -2756,7 +2756,7 @@ bool MenuCommon::RenderMenu()
                         ImGui::EndDisabled();
 
                         auto hudExtended = Config::Instance()->FGHUDFixExtended.value_or_default();
-                        if (ImGui::Checkbox("FG Extended", &hudExtended))
+                        if (ImGui::Checkbox("Extended", &hudExtended))
                         {
                             LOG_DEBUG("Enabled set FGHUDFixExtended: {}", hudExtended);
                             Config::Instance()->FGHUDFixExtended = hudExtended;
@@ -2767,7 +2767,7 @@ bool MenuCommon::RenderMenu()
                         ImGui::BeginDisabled(!Config::Instance()->FGHUDFix.value_or_default());
 
                         auto immediate = Config::Instance()->FGImmediateCapture.value_or_default();
-                        if (ImGui::Checkbox("FG Immediate Capture", &immediate))
+                        if (ImGui::Checkbox("Immediate Capture", &immediate))
                         {
                             LOG_DEBUG("Enabled set FGImmediateCapture: {}", immediate);
                             Config::Instance()->FGImmediateCapture = immediate;
@@ -2779,60 +2779,53 @@ bool MenuCommon::RenderMenu()
 
                         ImGui::EndDisabled();
 
+                        bool fgAsync = Config::Instance()->FGAsync.value_or_default();
+
+                        if (ImGui::Checkbox("Allow Async", &fgAsync))
+                        {
+                            Config::Instance()->FGAsync = fgAsync;
+
+                            if (Config::Instance()->FGEnabled.value_or_default())
+                            {
+                                State::Instance().FGchanged = true;
+                                State::Instance().SCchanged = true;
+                                LOG_DEBUG("Async set FGChanged");
+                            }
+                        }
+                        ShowHelpMarker(
+                            "Enable Async for better FG performance\nMight cause crashes, especially with HUD Fix!");
+
+                        ImGui::SameLine(0.0f, 16.0f);
+
+                        bool fgDV = Config::Instance()->FGDebugView.value_or_default();
+                        if (ImGui::Checkbox("Debug View##2", &fgDV))
+                        {
+                            Config::Instance()->FGDebugView = fgDV;
+
+                            if (Config::Instance()->FGEnabled.value_or_default())
+                            {
+                                State::Instance().FGchanged = true;
+                                LOG_DEBUG("DebugView set FGChanged");
+                            }
+                        }
+                        ShowHelpMarker("Enable FSR 3.1 frame generation debug view");
+
                         bool depthScale = Config::Instance()->FGEnableDepthScale.value_or_default();
-                        if (ImGui::Checkbox("FG Scale Depth to fix DLSS RR", &depthScale))
+                        if (ImGui::Checkbox("Scale Depth to fix DLSS RR", &depthScale))
                             Config::Instance()->FGEnableDepthScale = depthScale;
                         ShowHelpMarker("Fix for DLSS-D wrong depth inputs");
 
                         bool resourceFlip = Config::Instance()->FGResourceFlip.value_or_default();
-                        if (ImGui::Checkbox("FG Flip (Unity)", &resourceFlip))
+                        if (ImGui::Checkbox("Flip (Unity)", &resourceFlip))
                             Config::Instance()->FGResourceFlip = resourceFlip;
                         ShowHelpMarker("Flip Velocity & Depth resources of Unity games");
 
                         ImGui::SameLine(0.0f, 16.0f);
 
                         bool resourceFlipOffset = Config::Instance()->FGResourceFlipOffset.value_or_default();
-                        if (ImGui::Checkbox("FG Flip Use Offset", &resourceFlipOffset))
+                        if (ImGui::Checkbox("Flip Use Offset", &resourceFlipOffset))
                             Config::Instance()->FGResourceFlipOffset = resourceFlipOffset;
                         ShowHelpMarker("Use height difference as offset");
-
-                        /*
-                        ImGui::SeparatorText("Experimental sync settings");
-
-                        bool executeImmediately = Config::Instance()->FGImmediatelyExecute.value_or_default();
-                        if (ImGui::Checkbox("FG Execute Immediately", &executeImmediately))
-                        {
-                            if (executeImmediately)
-                                Config::Instance()->FGWaitForNextExecute = false;
-
-                            Config::Instance()->FGImmediatelyExecute = executeImmediately;
-                        }
-                        ShowHelpMarker("Execute FG Command List immediately\n"
-                                       "This might cause image issues if copy\n"
-                                       "operations are not commpleted");
-
-                        bool waitNext = Config::Instance()->FGWaitForNextExecute.value_or_default();
-                        if (ImGui::Checkbox("FG Wait Next Execute", &waitNext))
-                        {
-                            if (waitNext)
-                                Config::Instance()->FGImmediatelyExecute = false;
-
-                            Config::Instance()->FGWaitForNextExecute = waitNext;
-                        }
-                        ShowHelpMarker("Execute FG Command List with next query execute\n"
-                                       "This might be too late and Present trigger could kick in");
-
-                        ImGui::Spacing();
-                        ImGui::TextColored(ImVec4(0.9372549f, 0.8f, 0.f, 1.f), State::Instance().fgTrigSource.c_str());
-                        ImGui::Spacing();
-
-                        bool executeAC = Config::Instance()->FGExecuteAfterCallback.value_or_default();
-                        if (ImGui::Checkbox("FG Execute After Callback", &executeAC))
-                            Config::Instance()->FGExecuteAfterCallback = executeAC;
-
-                        ShowHelpMarker("Execute command list after FG callback\n"
-                                       "Normally it's executed after dispatch");
-                        */
 
                         ImGui::Spacing();
                         if (ImGui::CollapsingHeader("Advanced OptiFG Settings"))
@@ -2859,6 +2852,32 @@ bool MenuCommon::RenderMenu()
                             ShowHelpMarker("Relax resolution checks for Hudless by 32 pixels \n"
                                            "Helps games which use black borders for some \n"
                                            "resolutions and screen ratios (e.g. Witcher 3)");
+
+                            ImGui::SameLine(0.0f, 16.0f);
+                            auto debugResetLines = Config::Instance()->FGDebugResetLines.value_or_default();
+                            if (ImGui::Checkbox("Debug Reset Lines", &debugResetLines))
+                            {
+                                Config::Instance()->FGDebugResetLines = debugResetLines;
+                                LOG_DEBUG("Enabled set FGDebugLines: {}", debugResetLines);
+                            }
+                            ShowHelpMarker("Enables drawing of interpolation skip lines");
+
+                            auto debugTearLines = Config::Instance()->FGDebugTearLines.value_or_default();
+                            if (ImGui::Checkbox("Debug Tear Lines", &debugTearLines))
+                            {
+                                Config::Instance()->FGDebugTearLines = debugTearLines;
+                                LOG_DEBUG("Enabled set FGDebugLines: {}", debugTearLines);
+                            }
+                            ShowHelpMarker("Enables drawing of tear and interpolation skip lines");
+
+                            ImGui::SameLine(0.0f, 16.0f);
+                            auto debugPacingLines = Config::Instance()->FGDebugPacingLines.value_or_default();
+                            if (ImGui::Checkbox("Debug Pacing Lines", &debugPacingLines))
+                            {
+                                Config::Instance()->FGDebugPacingLines = debugPacingLines;
+                                LOG_DEBUG("Enabled set FGDebugLines: {}", debugPacingLines);
+                            }
+                            ShowHelpMarker("Enables drawing of pacing lines");
 
                             ImGui::BeginDisabled(State::Instance().FGresetCapturedResources);
                             ImGui::PushItemWidth(95.0f * Config::Instance()->MenuScale.value_or_default());

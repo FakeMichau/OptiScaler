@@ -335,6 +335,9 @@ void Hudfix_Dx12::HudlessFound(ID3D12GraphicsCommandList* cmdList)
     // Set it above 1000 to prvent capture
     _captureCounter[GetIndex()] = 9999;
 
+    auto fg = State::Instance().currentFG;
+    fg->Dispatch(nullptr, true, State::Instance().lastFrameTime);
+
     // Increase counter
     _fgCounter++;
 
