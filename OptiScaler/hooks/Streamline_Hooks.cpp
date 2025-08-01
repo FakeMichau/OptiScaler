@@ -12,9 +12,17 @@
 #include <sl1_reflex.h>
 #include "include/sl.param/parameters.h"
 
+sl::RenderAPI StreamlineHooks::renderApi = sl::RenderAPI::eCount;
+
 // interposer
 decltype(&slInit) StreamlineHooks::o_slInit = nullptr;
 decltype(&slSetTag) StreamlineHooks::o_slSetTag = nullptr;
+decltype(&slEvaluateFeature) StreamlineHooks::o_slEvaluateFeature = nullptr;
+decltype(&slAllocateResources) StreamlineHooks::o_slAllocateResources = nullptr;
+decltype(&slSetConstants) StreamlineHooks::o_slSetConstants = nullptr;
+decltype(&slGetNativeInterface) StreamlineHooks::o_slGetNativeInterface = nullptr;
+decltype(&slSetD3DDevice) StreamlineHooks::o_slSetD3DDevice = nullptr;
+
 decltype(&sl1::slInit) StreamlineHooks::o_slInit_sl1 = nullptr;
 
 sl::PFun_LogMessageCallback* StreamlineHooks::o_logCallback = nullptr;
@@ -94,23 +102,81 @@ sl::Result StreamlineHooks::hkslInit(sl::Preferences* pref, uint64_t sdkVersion)
         o_logCallback = pref->logMessageCallback;
     pref->logLevel = sl::LogLevel::eCount;
     pref->logMessageCallback = &streamlineLogCallback;
+
+    // renderAPI is optional so need to be careful, should only matter for Vulkan
+    renderApi = pref->renderAPI;
+    State::Instance().slFGInputs.reportEngineType(pref->engine);
+
     return o_slInit(*pref, sdkVersion);
 }
 
+// TODO: add support for slSetTagForFrame
 sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::ResourceTag* tags, uint32_t numTags,
                                        sl::CommandBuffer* cmdBuffer)
 {
+    if (renderApi != sl::RenderAPI::eD3D12)
+    {
+        LOG_ERROR("hkslSetTag only supports DX12");
+        return o_slSetTag(viewport, tags, numTags, cmdBuffer);
+    }
+
     for (uint32_t i = 0; i < numTags; i++)
     {
-        if (State::Instance().gameQuirks & GameQuirk::CyberpunkHudlessStateOverride && tags[i].type == 2 &&
+        // Cyberpunk hudless state fix for RDNA 2
+        if (State::Instance().gameQuirks & GameQuirk::CyberpunkHudlessStateOverride &&
             tags[i].resource->state ==
-                (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE))
+                (D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) &&
+            tags[i].type == sl::kBufferTypeHUDLessColor)
         {
             tags[i].resource->state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             LOG_TRACE("Changing hudless resource state");
         }
+
+        if (State::Instance().activeFgInput == FGInput::DLSSG &&
+            (tags[i].type == sl::kBufferTypeHUDLessColor || tags[i].type == sl::kBufferTypeDepth ||
+             tags[i].type == sl::kBufferTypeHiResDepth || tags[i].type == sl::kBufferTypeLinearDepth ||
+             tags[i].type == sl::kBufferTypeMotionVectors))
+        {
+            State::Instance().slFGInputs.reportResource(tags[i], (ID3D12GraphicsCommandList*) cmdBuffer);
+
+            if (State::Instance().slFGInputs.readyToDispatch())
+                State::Instance().slFGInputs.dispatchFG((ID3D12GraphicsCommandList*) cmdBuffer);
+        }
+
+        // TODO: any use for kBufferTypeUIColorAndAlpha ???
     }
     auto result = o_slSetTag(viewport, tags, numTags, cmdBuffer);
+    return result;
+}
+
+sl::Result StreamlineHooks::hkslEvaluateFeature(sl::Feature feature, const sl::FrameToken& frame,
+                                                const sl::BaseStructure** inputs, uint32_t numInputs,
+                                                sl::CommandBuffer* cmdBuffer)
+{
+    LOG_FUNC();
+    auto result = o_slEvaluateFeature(feature, frame, inputs, numInputs, cmdBuffer);
+    return result;
+}
+
+sl::Result StreamlineHooks::hkslAllocateResources(sl::CommandBuffer* cmdBuffer, sl::Feature feature,
+                                                  const sl::ViewportHandle& viewport)
+{
+    LOG_FUNC();
+    auto result = o_slAllocateResources(cmdBuffer, feature, viewport);
+    return result;
+}
+
+sl::Result StreamlineHooks::hkslGetNativeInterface(void* proxyInterface, void** baseInterface)
+{
+    LOG_FUNC();
+    auto result = o_slGetNativeInterface(proxyInterface, baseInterface);
+    return result;
+}
+
+sl::Result StreamlineHooks::hkslSetD3DDevice(void* d3dDevice)
+{
+    LOG_FUNC();
+    auto result = o_slSetD3DDevice(d3dDevice);
     return result;
 }
 
@@ -268,15 +334,26 @@ bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSO
     // TODO: do it better than "static" and hoping for the best
     static std::string config;
 
-    if (Config::Instance()->StreamlineSpoofing.value_or_default() && Config::Instance()->FGType != FGType::Nukems)
+    bool skipArchSpoof =
+        Config::Instance()->StreamlineSpoofing.value_or_default() &&
+        (Config::Instance()->FGInput != FGInput::Nukems || Config::Instance()->FGInput != FGInput::DLSSG);
+
+    if (skipArchSpoof)
         setSystemCapsArch((sl::param::IParameters*) params, 0);
 
     auto result = o_dlssg_slOnPluginLoad(params, loaderJSON, pluginJSON);
 
-    if (Config::Instance()->StreamlineSpoofing.value_or_default() && Config::Instance()->FGType != FGType::Nukems)
+    if (skipArchSpoof)
         setSystemCapsArch((sl::param::IParameters*) params, UINT_MAX);
 
     nlohmann::json configJson = nlohmann::json::parse(*pluginJSON);
+
+    // Kill the DLSSG streamline swapchain hooks
+    if (State::Instance().activeFgInput == FGInput::DLSSG)
+    {
+        configJson["hooks"].clear();
+        configJson["exclusive_hooks"].clear();
+    }
 
     if (Config::Instance()->VulkanExtensionSpoofing.value_or_default())
     {
@@ -290,6 +367,22 @@ bool StreamlineHooks::hkdlssg_slOnPluginLoad(void* params, const char* loaderJSO
     *pluginJSON = config.c_str();
 
     return result;
+}
+
+sl::Result StreamlineHooks::hkslSetConstants(const sl::Constants& values, const sl::FrameToken& frame,
+                                             const sl::ViewportHandle& viewport)
+{
+    unsigned int frameIndex = frame;
+
+    LOG_TRACE("called with frameIndex: {}", frameIndex);
+
+    State::Instance().slFGInputs.setConstants(values);
+
+    auto fg = State::Instance().currentFG;
+    if (fg != nullptr)
+        fg->Present(); // clear readiness for the next frames
+
+    return o_slSetConstants(values, frame, viewport);
 }
 
 bool StreamlineHooks::hkcommon_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON)
@@ -593,17 +686,43 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
             o_slSetTag =
                 reinterpret_cast<decltype(&slSetTag)>(KernelBaseProxy::GetProcAddress_()(slInterposer, "slSetTag"));
             o_slInit = reinterpret_cast<decltype(&slInit)>(KernelBaseProxy::GetProcAddress_()(slInterposer, "slInit"));
+            o_slEvaluateFeature = reinterpret_cast<decltype(&slEvaluateFeature)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slEvaluateFeature"));
+            o_slAllocateResources = reinterpret_cast<decltype(&slAllocateResources)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slAllocateResources"));
+            o_slSetConstants = reinterpret_cast<decltype(&slSetConstants)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slSetConstants"));
+            o_slGetNativeInterface = reinterpret_cast<decltype(&slGetNativeInterface)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slGetNativeInterface"));
+            o_slSetD3DDevice = reinterpret_cast<decltype(&slSetD3DDevice)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slSetD3DDevice"));
 
-            if (o_slSetTag != nullptr && o_slInit != nullptr)
+            if (o_slInit != nullptr)
             {
                 LOG_TRACE("Hooking v2");
                 DetourTransactionBegin();
                 DetourUpdateThread(GetCurrentThread());
 
-                if (Config::Instance()->FGType.value_or_default() == FGType::Nukems)
+                if (o_slSetTag != nullptr && (Config::Instance()->FGInput.value_or_default() == FGInput::Nukems ||
+                                              Config::Instance()->FGInput.value_or_default() == FGInput::DLSSG))
                     DetourAttach(&(PVOID&) o_slSetTag, hkslSetTag);
 
                 DetourAttach(&(PVOID&) o_slInit, hkslInit);
+
+                if (o_slEvaluateFeature != nullptr)
+                    DetourAttach(&(PVOID&) o_slEvaluateFeature, hkslEvaluateFeature);
+
+                if (o_slAllocateResources != nullptr)
+                    DetourAttach(&(PVOID&) o_slAllocateResources, hkslAllocateResources);
+
+                if (o_slSetConstants != nullptr)
+                    DetourAttach(&(PVOID&) o_slSetConstants, hkslSetConstants);
+
+                if (o_slGetNativeInterface != nullptr)
+                    DetourAttach(&(PVOID&) o_slGetNativeInterface, hkslGetNativeInterface);
+
+                if (o_slSetD3DDevice != nullptr)
+                    DetourAttach(&(PVOID&) o_slSetD3DDevice, hkslSetD3DDevice);
 
                 DetourTransactionCommit();
             }

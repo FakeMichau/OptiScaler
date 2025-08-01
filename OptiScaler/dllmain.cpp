@@ -828,9 +828,7 @@ static void CheckWorkingMode()
             }
 
             // SpecialK
-            if (!State::Instance().enablerAvailable &&
-                (Config::Instance()->FGType.value_or_default() != FGType::OptiFG ||
-                 !Config::Instance()->OverlayMenu.value_or_default()) &&
+            if (!State::Instance().enablerAvailable && !Config::Instance()->OverlayMenu.value_or_default() &&
                 skModule == nullptr && Config::Instance()->LoadSpecialK.value_or_default())
             {
                 auto skFile = Util::DllPath().parent_path() / L"SpecialK64.dll";
@@ -924,8 +922,8 @@ static void CheckQuirks()
     printQuirks(quirks);
 
     // Apply config-level quirks
-    if (quirks & GameQuirk::ForceNoOptiFG && Config::Instance()->FGType.value_or_default() == FGType::OptiFG)
-        Config::Instance()->FGType.set_volatile_value(FGType::NoFG);
+    if (quirks & GameQuirk::ForceNoOptiFG && Config::Instance()->FGInput.value_or_default() == FGInput::Upscaler)
+        Config::Instance()->FGInput.set_volatile_value(FGInput::NoFG);
 
     if (quirks & GameQuirk::DisableFSR3Inputs && !Config::Instance()->EnableFsr3Inputs.has_value())
         Config::Instance()->UseFsr3Inputs.set_volatile_value(false);
@@ -1100,12 +1098,18 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         CheckQuirks();
 
         // OptiFG & Overlay Checks
-        if (Config::Instance()->FGType.value_or_default() == FGType::OptiFG &&
+        // TODO: Either FGInput == FGInput::Upscaler or FGOutput == FGOutput::FSRFG
+        if ((Config::Instance()->FGInput.value_or_default() == FGInput::Upscaler) &&
             !Config::Instance()->DisableOverlays.has_value())
             Config::Instance()->DisableOverlays.set_volatile_value(true);
 
         if (Config::Instance()->DisableOverlays.value_or_default())
             SetEnvironmentVariable(L"SteamNoOverlayUIDrawing", L"1");
+
+        // Initial state of FG
+        State::Instance().currentFgPreset = Config::Instance()->FGPreset.value_or_default();
+        State::Instance().activeFgInput = Config::Instance()->FGInput.value_or_default();
+        State::Instance().activeFgOutput = Config::Instance()->FGOutput.value_or_default();
 
         // Init Kernel proxies
         KernelBaseProxy::Init();
@@ -1208,9 +1212,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             HookFSR3ExeInputs();
         }
         // HookFfxExeInputs();
-
-        // Initial state of FSR-FG
-        State::Instance().activeFgType = Config::Instance()->FGType.value_or_default();
 
         for (size_t i = 0; i < 300; i++)
         {

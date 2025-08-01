@@ -503,7 +503,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_Shutdown(void)
     // Disabled for now to check if it cause any issues
     // HooksDx::UnHookDx();
 
-    if (State::Instance().currentFG != nullptr)
+    if (State::Instance().currentFG != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
         State::Instance().currentFG->StopAndDestroyContext(true, true, false);
 
     shutdown = false;
@@ -874,7 +874,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_CreateFeature(ID3D12GraphicsComma
         State::Instance().currentFeature = deviceContext;
         evalCounter = 0;
 
-        if (State::Instance().currentFG != nullptr)
+        if (State::Instance().currentFG != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
             State::Instance().currentFG->ResetCounters();
 
         if (Config::Instance()->FGHUDFix.value_or_default())
@@ -930,7 +930,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_ReleaseFeature(NVSDK_NGX_Handle* 
     auto handleId = InHandle->Id;
 
     State::Instance().FGchanged = true;
-    if (State::Instance().currentFG != nullptr)
+    if (State::Instance().currentFG != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
     {
         State::Instance().currentFG->StopAndDestroyContext(true, false, false);
         Hudfix_Dx12::ResetCounters();
@@ -998,7 +998,8 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_GetFeatureRequirements(
     DLSSGMod::InitDLSSGMod_Dx12();
 
     if (FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_SuperSampling ||
-        (DLSSGMod::isDx12Available() && FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_FrameGeneration))
+        ((DLSSGMod::isDx12Available() || Config::Instance()->FGInput == FGInput::DLSSG) &&
+         FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_FrameGeneration))
     {
         if (OutSupported == nullptr)
             OutSupported = new NVSDK_NGX_FeatureRequirement();
@@ -1273,7 +1274,8 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         // first release everything
         if (deviceContext->changeBackendCounter == 1)
         {
-            if (State::Instance().currentFG != nullptr && State::Instance().currentFG->IsActive())
+            if (State::Instance().currentFG != nullptr && State::Instance().currentFG->IsActive() &&
+                State::Instance().activeFgInput == FGInput::Upscaler)
             {
                 State::Instance().currentFG->StopAndDestroyContext(false, false, false);
                 Hudfix_Dx12::ResetCounters();
@@ -1452,7 +1454,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
 
         // if initial feature can't be inited
         State::Instance().currentFeature = deviceContext->feature.get();
-        if (State::Instance().currentFG != nullptr)
+        if (State::Instance().currentFG != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
             State::Instance().currentFG->UpdateTarget();
 
         // return NVSDK_NGX_Result_Success;
@@ -1484,40 +1486,31 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         fg = State::Instance().currentFG;
 
     // FG Init || Disable
-    if (State::Instance().activeFgType == OptiFG && Config::Instance()->OverlayMenu.value_or_default())
+    if (fg != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
     {
-        if (!State::Instance().FGchanged && Config::Instance()->FGEnabled.value_or_default() &&
-            fg->TargetFrame() < fg->FrameCount() && FfxApiProxy::InitFfxDx12() && !fg->IsActive() &&
-            HooksDx::CurrentSwapchainFormat() != DXGI_FORMAT_UNKNOWN)
-        {
-            fg->CreateObjects(D3D12Device);
-            fg->CreateContext(D3D12Device, deviceContext->feature.get());
-            fg->ResetCounters();
-            fg->UpdateTarget();
-        }
-        else if ((!Config::Instance()->FGEnabled.value_or_default() || State::Instance().FGchanged) && fg != nullptr &&
-                 fg->IsActive())
-        {
-            fg->StopAndDestroyContext(State::Instance().SCchanged, false, false);
-            Hudfix_Dx12::ResetCounters();
-        }
+        auto feature = deviceContext->feature.get();
 
-        if (State::Instance().FGchanged)
-        {
-            LOG_DEBUG("(FG) Frame generation paused");
-            fg->ResetCounters();
-            fg->UpdateTarget();
-            Hudfix_Dx12::ResetCounters();
+        FG_Constants fgConstants {};
+        fgConstants.displayWidth = feature->DisplayWidth();
+        fgConstants.displayHeight = feature->DisplayHeight();
 
-            // Release FG mutex
-            if (fg->Mutex.getOwner() == 2)
-                fg->Mutex.unlockThis(2);
+        if (feature->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_IsHDR)
+            fgConstants.flags |= FG_Flags::Hdr;
 
-            State::Instance().FGchanged = false;
-        }
+        if (feature->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_DepthInverted)
+            fgConstants.flags |= FG_Flags::InvertedDepth;
+
+        if (feature->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_MVJittered)
+            fgConstants.flags |= FG_Flags::JitteredMVs;
+
+        if ((feature->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_MVLowRes) == 0)
+            fgConstants.flags |= FG_Flags::DisplayResolutionMVs;
+
+        if (Config::Instance()->FGAsync.value_or_default())
+            fgConstants.flags |= FG_Flags::Async;
+
+        fg->EvaluateState(D3D12Device, fgConstants);
     }
-
-    State::Instance().SCchanged = false;
 
     // FSR Camera values
     float cameraNear = 0.0f;
@@ -1572,9 +1565,9 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_X, &mvScaleX);
         InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_Y, &mvScaleY);
 
-        if (fg != nullptr)
+        if (fg != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
         {
-            fg->UpscaleStart();
+            fg->UpdateFrameCount();
 
             fg->SetCameraValues(cameraNear, cameraFar, cameraVFov, meterFactor);
             fg->SetFrameTimeDelta(State::Instance().lastFrameTime);
@@ -1592,7 +1585,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
 
     UINT frameIndex;
     if (!State::Instance().isShuttingDown && fg != nullptr && fg->IsActive() &&
-        State::Instance().activeFgType == OptiFG && Config::Instance()->OverlayMenu.value_or_default() &&
+        State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->OverlayMenu.value_or_default() &&
         Config::Instance()->FGEnabled.value_or_default() && fg->TargetFrame() < fg->FrameCount() &&
         State::Instance().currentSwapchain != nullptr)
     {
@@ -1640,7 +1633,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         if (InParameters->Get(NVSDK_NGX_Parameter_Depth, &paramDepth) != NVSDK_NGX_Result_Success)
             InParameters->Get(NVSDK_NGX_Parameter_Depth, (void**) &paramDepth);
 
-        if (paramDepth != nullptr)
+        if (paramDepth != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
         {
             auto done = false;
 
@@ -1697,15 +1690,16 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         InCmdList->ResolveQueryData(HooksDx::queryHeap, D3D12_QUERY_TYPE_TIMESTAMP, 0, 2, HooksDx::readbackBuffer, 0);
     }
 
-    NVSDK_NGX_Result methodResult = NVSDK_NGX_Result_Fail;
+    NVSDK_NGX_Result methodResult = evalResult ? NVSDK_NGX_Result_Success : NVSDK_NGX_Result_Fail;
 
-    // FG Dispatch
     if (evalResult)
-    {
         HooksDx::dx12UpscaleTrig = true;
 
+    // FG Dispatch
+    if (evalResult && State::Instance().activeFgInput == FGInput::Upscaler)
+    {
         // FG Dispatch
-        if (fg != nullptr && fg->IsActive() && State::Instance().activeFgType == OptiFG &&
+        if (fg != nullptr && fg->IsActive() && State::Instance().activeFgOutput == FGOutput::FSRFG &&
             Config::Instance()->OverlayMenu.value_or_default() && Config::Instance()->FGEnabled.value_or_default() &&
             fg->TargetFrame() < fg->FrameCount() && State::Instance().currentSwapchain != nullptr)
         {
@@ -1741,8 +1735,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
                 fg->Dispatch(InCmdList, output, State::Instance().lastFrameTime);
             }
         }
-
-        methodResult = NVSDK_NGX_Result_Success;
     }
 
     // Root signature restore

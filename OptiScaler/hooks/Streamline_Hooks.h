@@ -37,9 +37,17 @@ class StreamlineHooks
     static void hookCommon(HMODULE slCommon);
 
   private:
+    static sl::RenderAPI renderApi;
+
     // Interposer
     static decltype(&slInit) o_slInit;
     static decltype(&slSetTag) o_slSetTag;
+    static decltype(&slEvaluateFeature) o_slEvaluateFeature;
+    static decltype(&slAllocateResources) o_slAllocateResources;
+    static decltype(&slSetConstants) o_slSetConstants;
+    static decltype(&slGetNativeInterface) o_slGetNativeInterface;
+    static decltype(&slSetD3DDevice) o_slSetD3DDevice;
+
     static decltype(&sl1::slInit) o_slInit_sl1;
 
     static sl::PFun_LogMessageCallback* o_logCallback;
@@ -49,6 +57,17 @@ class StreamlineHooks
     static bool hkslInit_sl1(sl1::Preferences* pref, int applicationId);
     static sl::Result hkslSetTag(sl::ViewportHandle& viewport, sl::ResourceTag* tags, uint32_t numTags,
                                  sl::CommandBuffer* cmdBuffer);
+
+    static sl::Result hkslEvaluateFeature(sl::Feature feature, const sl::FrameToken& frame,
+                                          const sl::BaseStructure** inputs, uint32_t numInputs,
+                                          sl::CommandBuffer* cmdBuffer);
+
+    static sl::Result hkslAllocateResources(sl::CommandBuffer* cmdBuffer, sl::Feature feature,
+                                            const sl::ViewportHandle& viewport);
+
+    static sl::Result hkslGetNativeInterface(void* proxyInterface, void** baseInterface);
+
+    static sl::Result hkslSetD3DDevice(void* d3dDevice);
 
     // DLSS
     static PFN_slGetPluginFunction o_dlss_slGetPluginFunction;
@@ -63,6 +82,8 @@ class StreamlineHooks
     static decltype(&slDLSSGSetOptions) o_slDLSSGSetOptions;
 
     static bool hkdlssg_slOnPluginLoad(void* params, const char* loaderJSON, const char** pluginJSON);
+    static sl::Result hkslSetConstants(const sl::Constants& values, const sl::FrameToken& frame,
+                                       const sl::ViewportHandle& viewport);
     static sl::Result hkslDLSSGSetOptions(const sl::ViewportHandle& viewport, const sl::DLSSGOptions& options);
     static void* hkdlssg_slGetPluginFunction(const char* functionName);
 

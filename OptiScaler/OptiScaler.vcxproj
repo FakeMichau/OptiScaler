@@ -307,6 +307,7 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClInclude Include="framegen\ffx\FSRFG_Dx12.h" />
     <ClInclude Include="framegen\IFGFeature.h" />
     <ClInclude Include="framegen\IFGFeature_Dx12.h" />
+    <ClInclude Include="framegen\Streamline_Inputs_Dx12.h" />
     <ClInclude Include="hooks\Advapi32_Hooks.h" />
     <ClInclude Include="hooks\Crypt32_Hooks.h" />
     <ClInclude Include="hooks\Gdi32_Hooks.h" />
@@ -330,6 +331,7 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClInclude Include="inputs\XeSS_Proxy.h" />
     <ClInclude Include="inputs\XeSS_Vulkan.h" />
     <ClInclude Include="menu\font\Hack_Compressed.h" />
+    <ClInclude Include="misc\CommandListManager.h" />
     <ClInclude Include="misc\FrameLimit.h" />
     <ClInclude Include="misc\Quirks.h" />
     <ClInclude Include="OwnedMutex.h" />
@@ -460,6 +462,7 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClCompile Include="framegen\ffx\FSRFG_Dx12.cpp" />
     <ClCompile Include="framegen\IFGFeature.cpp" />
     <ClCompile Include="framegen\IFGFeature_Dx12.cpp" />
+    <ClCompile Include="framegen\Streamline_Inputs_Dx12.cpp" />
     <ClCompile Include="hooks\Streamline_Hooks.cpp" />
     <ClCompile Include="hudfix\Hudfix_Dx12.cpp" />
     <ClCompile Include="include\imgui\imgui_impl_dx11.cpp" />
@@ -474,6 +477,7 @@ copy NUL "$(SolutionDir)x64\Release\a\!! EXTRACT ALL FILES TO GAME FOLDER !!" /Y
     <ClCompile Include="inputs\XeSS_Common.cpp" />
     <ClCompile Include="inputs\XeSS_Dbg.cpp" />
     <ClCompile Include="inputs\XeSS_Vulkan.cpp" />
+    <ClCompile Include="misc\CommandListManager.cpp" />
     <ClCompile Include="misc\FrameLimit.cpp" />
     <ClCompile Include="nvapi\fakenvapi.cpp" />
     <ClCompile Include="nvapi\NvApiHooks.cpp" />

@@ -63,9 +63,9 @@ bool Hudfix_Dx12::CreateObjects()
         queueDesc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_HIGH;
 
         HRESULT hr = State::Instance().currentD3D12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&_commandQueue));
-        if (result != S_OK)
+        if (hr != S_OK)
         {
-            LOG_ERROR("CreateCommandQueue: {:X}", (unsigned long) result);
+            LOG_ERROR("CreateCommandQueue: {:X}", (unsigned long) hr);
             break;
         }
 
@@ -729,7 +729,10 @@ bool Hudfix_Dx12::CheckForHudless(std::string callerName, ID3D12GraphicsCommandL
                 auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
 
                 if (fg != nullptr)
+                {
                     fg->SetHudless(cmdList, _formatTransfer->Buffer(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, false);
+                    fg->SetHudlessReady();
+                }
             }
             else
             {
@@ -747,7 +750,10 @@ bool Hudfix_Dx12::CheckForHudless(std::string callerName, ID3D12GraphicsCommandL
             auto fg = reinterpret_cast<IFGFeature_Dx12*>(State::Instance().currentFG);
 
             if (fg != nullptr)
+            {
                 fg->SetHudless(cmdList, _captureBuffer[fIndex], D3D12_RESOURCE_STATE_COPY_DEST, false);
+                fg->SetHudlessReady();
+            }
         }
 
         if (State::Instance().FGcaptureResources)

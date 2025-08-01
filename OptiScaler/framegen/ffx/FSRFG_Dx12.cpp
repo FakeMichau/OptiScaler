@@ -5,7 +5,8 @@
 #include <upscalers/IFeature.h>
 #include <menu/menu_overlay_dx.h>
 #include <future>
-
+#include <hooks/HooksDx.h>
+#include <hudfix/Hudfix_Dx12.h>
 // #define USE_QUEUE_FOR_FG
 
 typedef struct FfxSwapchainFramePacingTuning
@@ -46,17 +47,7 @@ void FSRFG_Dx12::ConfigureFramePaceTuning()
     }
 }
 
-void FSRFG_Dx12::GetDispatchCommandList()
-{
-    ffxQueryDescFrameGenerationSwapChainInterpolationCommandListDX12 queryDesc { 0 };
-    queryDesc.header.type = FFX_API_QUERY_DESC_TYPE_FRAMEGENERATIONSWAPCHAIN_INTERPOLATIONCOMMANDLIST_DX12;
-    queryDesc.pOutCommandList = (void**) &_dispatchCommandList;
-
-    auto result = FfxApiProxy::D3D12_Query()(&_swapChainContext, &queryDesc.header);
-    LOG_DEBUG("FG CommandList D3D12_Query result: {}", FfxApiProxy::ReturnCodeToString(result));
-}
-
-UINT64 FSRFG_Dx12::UpscaleStart()
+UINT64 FSRFG_Dx12::UpdateFrameCount()
 {
     LOG_FUNC();
 
@@ -96,6 +87,12 @@ const char* FSRFG_Dx12::Name() { return "FSR-FG"; }
 
 bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* output, double frameTime)
 {
+    if (_fgContext == nullptr)
+    {
+        LOG_DEBUG("No fg context");
+        return false;
+    }
+
     LOG_DEBUG("(FG) running, frame: {0}", _frameCount);
 
     _lastDispatchedFrame = _frameCount;
@@ -117,19 +114,24 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
     DXGI_SWAP_CHAIN_DESC scDesc {};
     _swapChain->GetDesc(&scDesc);
-    auto desc = output->GetDesc();
+    D3D12_RESOURCE_DESC desc = {};
+
+    if (output != nullptr)
+        desc = output->GetDesc();
+
+    auto index = GetIndex();
     if (Config::Instance()->FGHUDFixExtended.value_or_default() && desc.Format == scDesc.BufferDesc.Format)
     {
         if (desc.Width == scDesc.BufferDesc.Width && desc.Height == scDesc.BufferDesc.Height)
         {
             if (CreateBufferResource(State::Instance().currentD3D12Device, output, D3D12_RESOURCE_STATE_COPY_DEST,
-                                     &_paramHudless[frameIndex], true, false))
+                                     &_paramHudless[frameIndex].resource, true, false))
             {
                 LOG_DEBUG("(FG) desc.Format == HooksDx::swapchainFormat, using for hudless!");
-                cmdList->CopyResource(_paramHudless[frameIndex], output);
+                cmdList->CopyResource(_paramHudless[frameIndex].resource, output);
 
                 m_FrameGenerationConfig.HUDLessColor =
-                    ffxApiGetResourceDX12(_paramHudless[frameIndex], FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
+                    ffxApiGetResourceDX12(_paramHudless[frameIndex].resource, FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
             }
         }
         else if (Config::Instance()->FGRelaxedResolutionCheck.value_or_default() &&
@@ -138,7 +140,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
                  State::Instance().currentD3D12Device != nullptr)
         {
             if (CreateBufferResourceWithSize(State::Instance().currentD3D12Device, output,
-                                             D3D12_RESOURCE_STATE_COPY_DEST, &_paramHudless[frameIndex],
+                                             D3D12_RESOURCE_STATE_COPY_DEST, &_paramHudless[frameIndex].resource,
                                              scDesc.BufferDesc.Width, scDesc.BufferDesc.Height, true, false))
             {
                 D3D12_TEXTURE_COPY_LOCATION srcLocation;
@@ -149,7 +151,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
                 D3D12_TEXTURE_COPY_LOCATION dstLocation;
                 ZeroMemory(&dstLocation, sizeof(dstLocation));
-                dstLocation.pResource = _paramHudless[frameIndex];
+                dstLocation.pResource = _paramHudless[frameIndex].resource;
                 dstLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
                 dstLocation.SubresourceIndex = 0; // paste into mip 0, array slice 0
 
@@ -177,7 +179,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
                 }
 
                 m_FrameGenerationConfig.HUDLessColor =
-                    ffxApiGetResourceDX12(_paramHudless[frameIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
+                    ffxApiGetResourceDX12(_paramHudless[frameIndex].resource, FFX_API_RESOURCE_STATE_COPY_DEST);
             }
         }
     }
@@ -188,6 +190,7 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
     m_FrameGenerationConfig.header.type = FFX_API_CONFIGURE_DESC_TYPE_FRAMEGENERATION;
     m_FrameGenerationConfig.frameGenerationEnabled = true;
+
     m_FrameGenerationConfig.flags = 0;
 
     if (Config::Instance()->FGDebugView.value_or_default())
@@ -197,34 +200,42 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
     // use swapchain buffer info
     DXGI_SWAP_CHAIN_DESC scDesc1 {};
-    if (State::Instance().currentSwapchain->GetDesc(&scDesc1) == S_OK)
+    bool hasSwapChainDesc = State::Instance().currentSwapchain->GetDesc(&scDesc1) == S_OK;
+    auto feature = State::Instance().currentFeature;
+
+    int bufferWidth = hasSwapChainDesc ? scDesc1.BufferDesc.Width : 0;
+    int bufferHeight = hasSwapChainDesc ? scDesc1.BufferDesc.Height : 0;
+
+    int defaultLeft = 0;
+    int defaultTop = 0;
+    int defaultWidth = 0;
+    int defaultHeight = 0;
+
+    if (feature)
     {
-        if (State::Instance().currentFeature != nullptr)
-        {
-            m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(
-                (scDesc1.BufferDesc.Width - State::Instance().currentFeature->DisplayWidth()) / 2);
-            m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(
-                (scDesc1.BufferDesc.Height - State::Instance().currentFeature->DisplayHeight()) / 2);
-        }
-        else
-        {
-            m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(0);
-            m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(0);
-        }
-        m_FrameGenerationConfig.generationRect.width =
-            Config::Instance()->FGRectWidth.value_or(scDesc1.BufferDesc.Width);
-        m_FrameGenerationConfig.generationRect.height =
-            Config::Instance()->FGRectHeight.value_or(scDesc1.BufferDesc.Height);
+        int displayWidth = feature->DisplayWidth();
+        int displayHeight = feature->DisplayHeight();
+
+        defaultLeft = hasSwapChainDesc ? (bufferWidth - displayWidth) / 2 : 0;
+        defaultTop = hasSwapChainDesc ? (bufferHeight - displayHeight) / 2 : 0;
+        defaultWidth = displayWidth;
+        defaultHeight = displayHeight;
     }
     else
     {
-        m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(0);
-        m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(0);
-        m_FrameGenerationConfig.generationRect.width =
-            Config::Instance()->FGRectWidth.value_or(State::Instance().currentFeature->DisplayWidth());
-        m_FrameGenerationConfig.generationRect.height =
-            Config::Instance()->FGRectHeight.value_or(State::Instance().currentFeature->DisplayHeight());
+        defaultLeft = 0;
+        defaultTop = 0;
+        defaultWidth = hasSwapChainDesc ? bufferWidth : 0;
+        defaultHeight = hasSwapChainDesc ? bufferHeight : 0;
+
+        if (!hasSwapChainDesc)
+            LOG_ERROR("No swapchain or feature, invalid FG Rect values");
     }
+
+    m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(defaultLeft);
+    m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(defaultTop);
+    m_FrameGenerationConfig.generationRect.width = Config::Instance()->FGRectWidth.value_or(defaultWidth);
+    m_FrameGenerationConfig.generationRect.height = Config::Instance()->FGRectHeight.value_or(defaultHeight);
 
     m_FrameGenerationConfig.frameGenerationCallbackUserContext = this;
     m_FrameGenerationConfig.frameGenerationCallback = [](ffxDispatchDescFrameGeneration* params,
@@ -256,9 +267,18 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
         backendDesc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12;
         backendDesc.device = State::Instance().currentD3D12Device;
 
+        ffxDispatchDescFrameGenerationPrepareCameraInfo dfgCameraData {};
+        dfgCameraData.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE_CAMERAINFO;
+        dfgCameraData.header.pNext = &backendDesc.header;
+
+        std::memcpy(dfgCameraData.cameraPosition, _cameraPosition, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraUp, _cameraUp, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraRight, _cameraRight, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraForward, _cameraForward, 3 * sizeof(float));
+
         ffxDispatchDescFrameGenerationPrepare dfgPrepare {};
         dfgPrepare.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE;
-        dfgPrepare.header.pNext = &backendDesc.header;
+        dfgPrepare.header.pNext = &dfgCameraData.header;
 
         // GetDispatchCommandList();
 
@@ -270,16 +290,30 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
 
         dfgPrepare.frameID = _frameCount;
         dfgPrepare.flags = m_FrameGenerationConfig.flags;
-        dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(),
-                                  State::Instance().currentFeature->RenderHeight() };
 
         dfgPrepare.jitterOffset.x = _jitterX;
         dfgPrepare.jitterOffset.y = _jitterY;
-        dfgPrepare.motionVectors = ffxApiGetResourceDX12(_paramVelocity[frameIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
-        dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[frameIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
+        dfgPrepare.motionVectors =
+            ffxApiGetResourceDX12(_paramVelocity[frameIndex].resource, _paramVelocity->getFfxApiState());
+        dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[frameIndex].resource, _paramDepth->getFfxApiState());
 
-        dfgPrepare.motionVectorScale.x = _mvScaleX;
-        dfgPrepare.motionVectorScale.y = _mvScaleY;
+        if (State::Instance().currentFeature && State::Instance().activeFgInput == FGInput::Upscaler)
+            dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(),
+                                      State::Instance().currentFeature->RenderHeight() };
+        else
+            dfgPrepare.renderSize = { dfgPrepare.depth.description.width, dfgPrepare.depth.description.height };
+
+        if (_mvScaleMultiplyByResolution)
+        {
+            dfgPrepare.motionVectorScale.x = _mvScaleX * dfgPrepare.renderSize.width;
+            dfgPrepare.motionVectorScale.y = _mvScaleY * dfgPrepare.renderSize.height;
+        }
+        else
+        {
+            dfgPrepare.motionVectorScale.x = _mvScaleX;
+            dfgPrepare.motionVectorScale.y = _mvScaleY;
+        }
+
         dfgPrepare.cameraFar = _cameraFar;
         dfgPrepare.cameraNear = _cameraNear;
         dfgPrepare.cameraFovAngleVertical = _cameraVFov;
@@ -319,13 +353,21 @@ bool FSRFG_Dx12::Dispatch(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* ou
         Mutex.unlockThis(1);
     }
 
-    _mvAndDepthReady[frameIndex] = false;
+    _velocityReady[frameIndex] = false;
+    _depthReady[frameIndex] = false;
+    _hudlessReady[frameIndex] = false;
 
     return retCode == FFX_API_RETURN_OK;
 }
 
 bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHudless, double frameTime)
 {
+    if (_fgContext == nullptr)
+    {
+        LOG_DEBUG("No fg context");
+        return false;
+    }
+
     _lastDispatchedFrame = _frameCount;
 
     LOG_DEBUG("useHudless: {}, frameTime: {}", useHudless, frameTime);
@@ -338,12 +380,12 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
     ffxConfigureDescFrameGeneration m_FrameGenerationConfig = {};
     m_FrameGenerationConfig.header.type = FFX_API_CONFIGURE_DESC_TYPE_FRAMEGENERATION;
 
-    if (useHudless && _paramHudless[fIndex] != nullptr)
+    if (useHudless && _paramHudless[fIndex].resource != nullptr)
     {
-        LOG_TRACE("Using hudless: {:X}", (size_t) _paramHudless[fIndex]);
-        m_FrameGenerationConfig.HUDLessColor =
-            ffxApiGetResourceDX12(_paramHudless[fIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
-        _paramHudless[fIndex] = nullptr;
+        LOG_TRACE("Using hudless: {:X}", (size_t) _paramHudless[fIndex].resource);
+        auto state = m_FrameGenerationConfig.HUDLessColor =
+            ffxApiGetResourceDX12(_paramHudless[fIndex].resource, _paramHudless[fIndex].getFfxApiState());
+        _paramHudless[fIndex] = {};
     }
     else
     {
@@ -360,38 +402,42 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
 
     // use swapchain buffer info
     DXGI_SWAP_CHAIN_DESC scDesc1 {};
-    if (State::Instance().currentSwapchain->GetDesc(&scDesc1) == S_OK)
+    bool hasSwapChainDesc = State::Instance().currentSwapchain->GetDesc(&scDesc1) == S_OK;
+    auto feature = State::Instance().currentFeature;
+
+    int bufferWidth = hasSwapChainDesc ? scDesc1.BufferDesc.Width : 0;
+    int bufferHeight = hasSwapChainDesc ? scDesc1.BufferDesc.Height : 0;
+
+    int defaultLeft = 0;
+    int defaultTop = 0;
+    int defaultWidth = 0;
+    int defaultHeight = 0;
+
+    if (feature)
     {
-        if (State::Instance().currentFeature != nullptr)
-        {
-            auto calculatedLeft = (scDesc1.BufferDesc.Width - State::Instance().currentFeature->DisplayWidth()) / 2;
-            auto finalLeft = Config::Instance()->FGRectLeft.value_or(calculatedLeft);
-            m_FrameGenerationConfig.generationRect.left = finalLeft;
+        int displayWidth = feature->DisplayWidth();
+        int displayHeight = feature->DisplayHeight();
 
-            auto calculatedTop = (scDesc1.BufferDesc.Height - State::Instance().currentFeature->DisplayHeight()) / 2;
-            auto finalTop = Config::Instance()->FGRectTop.value_or(calculatedTop);
-            m_FrameGenerationConfig.generationRect.top = finalTop;
-        }
-        else
-        {
-            m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(0);
-            m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(0);
-        }
-
-        m_FrameGenerationConfig.generationRect.width =
-            Config::Instance()->FGRectWidth.value_or(State::Instance().currentFeature->DisplayWidth());
-        m_FrameGenerationConfig.generationRect.height =
-            Config::Instance()->FGRectHeight.value_or(State::Instance().currentFeature->DisplayHeight());
+        defaultLeft = hasSwapChainDesc ? (bufferWidth - displayWidth) / 2 : 0;
+        defaultTop = hasSwapChainDesc ? (bufferHeight - displayHeight) / 2 : 0;
+        defaultWidth = displayWidth;
+        defaultHeight = displayHeight;
     }
     else
     {
-        m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(0);
-        m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(0);
-        m_FrameGenerationConfig.generationRect.width =
-            Config::Instance()->FGRectWidth.value_or(State::Instance().currentFeature->DisplayWidth());
-        m_FrameGenerationConfig.generationRect.height =
-            Config::Instance()->FGRectHeight.value_or(State::Instance().currentFeature->DisplayHeight());
+        defaultLeft = 0;
+        defaultTop = 0;
+        defaultWidth = hasSwapChainDesc ? bufferWidth : 0;
+        defaultHeight = hasSwapChainDesc ? bufferHeight : 0;
+
+        if (!hasSwapChainDesc)
+            LOG_ERROR("No swapchain or feature, invalid FG Rect values");
     }
+
+    m_FrameGenerationConfig.generationRect.left = Config::Instance()->FGRectLeft.value_or(defaultLeft);
+    m_FrameGenerationConfig.generationRect.top = Config::Instance()->FGRectTop.value_or(defaultTop);
+    m_FrameGenerationConfig.generationRect.width = Config::Instance()->FGRectWidth.value_or(defaultWidth);
+    m_FrameGenerationConfig.generationRect.height = Config::Instance()->FGRectHeight.value_or(defaultHeight);
 
     m_FrameGenerationConfig.frameGenerationCallbackUserContext = this;
     m_FrameGenerationConfig.frameGenerationCallback = [](ffxDispatchDescFrameGeneration* params,
@@ -421,13 +467,30 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
         backendDesc.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_BACKEND_DX12;
         backendDesc.device = State::Instance().currentD3D12Device;
 
+        ffxDispatchDescFrameGenerationPrepareCameraInfo dfgCameraData {};
+        dfgCameraData.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE_CAMERAINFO;
+        dfgCameraData.header.pNext = &backendDesc.header;
+
+        std::memcpy(dfgCameraData.cameraPosition, _cameraPosition, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraUp, _cameraUp, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraRight, _cameraRight, 3 * sizeof(float));
+        std::memcpy(dfgCameraData.cameraForward, _cameraForward, 3 * sizeof(float));
+
         ffxDispatchDescFrameGenerationPrepare dfgPrepare {};
         dfgPrepare.header.type = FFX_API_DISPATCH_DESC_TYPE_FRAMEGENERATION_PREPARE;
-        dfgPrepare.header.pNext = &backendDesc.header;
+        dfgPrepare.header.pNext = &dfgCameraData.header;
+
+        // GetDispatchCommandList();
 
         if (cmdList != nullptr)
         {
             dfgPrepare.commandList = cmdList;
+
+            IDXGISwapChain3* swapChain3 = nullptr;
+            State::Instance().currentSwapchain->QueryInterface(IID_PPV_ARGS(&swapChain3));
+            auto index = swapChain3->GetCurrentBackBufferIndex();
+
+            dfgPrepare.commandList = _commandManager.GetCommandList(index % COMMAND_BUFFER_COUNT);
         }
         else
         {
@@ -446,16 +509,29 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
         dfgPrepare.frameID = _frameCount;
         dfgPrepare.flags = m_FrameGenerationConfig.flags;
 
-        dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(),
-                                  State::Instance().currentFeature->RenderHeight() };
-
         dfgPrepare.jitterOffset.x = _jitterX;
         dfgPrepare.jitterOffset.y = _jitterY;
-        dfgPrepare.motionVectors = ffxApiGetResourceDX12(_paramVelocity[fIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
-        dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[fIndex], FFX_API_RESOURCE_STATE_COPY_DEST);
+        dfgPrepare.motionVectors =
+            ffxApiGetResourceDX12(_paramVelocity[fIndex].resource, _paramVelocity->getFfxApiState());
+        dfgPrepare.depth = ffxApiGetResourceDX12(_paramDepth[fIndex].resource, _paramDepth->getFfxApiState());
 
-        dfgPrepare.motionVectorScale.x = _mvScaleX;
-        dfgPrepare.motionVectorScale.y = _mvScaleY;
+        if (State::Instance().currentFeature && State::Instance().activeFgInput == FGInput::Upscaler)
+            dfgPrepare.renderSize = { State::Instance().currentFeature->RenderWidth(),
+                                      State::Instance().currentFeature->RenderHeight() };
+        else
+            dfgPrepare.renderSize = { dfgPrepare.depth.description.width, dfgPrepare.depth.description.height };
+
+        if (_mvScaleMultiplyByResolution)
+        {
+            dfgPrepare.motionVectorScale.x = _mvScaleX * dfgPrepare.renderSize.width;
+            dfgPrepare.motionVectorScale.y = _mvScaleY * dfgPrepare.renderSize.height;
+        }
+        else
+        {
+            dfgPrepare.motionVectorScale.x = _mvScaleX;
+            dfgPrepare.motionVectorScale.y = _mvScaleY;
+        }
+
         dfgPrepare.cameraFar = _cameraFar;
         dfgPrepare.cameraNear = _cameraNear;
         dfgPrepare.cameraFovAngleVertical = _cameraVFov;
@@ -476,7 +552,8 @@ bool FSRFG_Dx12::DispatchHudless(ID3D12GraphicsCommandList* cmdList, bool useHud
         Mutex.unlockThis(1);
     };
 
-    _mvAndDepthReady[fIndex] = false;
+    _velocityReady[fIndex] = false;
+    _depthReady[fIndex] = false;
     _hudlessReady[fIndex] = false;
 
     return retCode == FFX_API_RETURN_OK;
@@ -503,6 +580,9 @@ ffxReturnCode_t FSRFG_Dx12::DispatchCallback(ffxDispatchDescFrameGeneration* par
     }
 #endif
 
+    LOG_DEBUG("frameID: {}, commandList: {:X}, numGeneratedFrames: {}", params->frameID, (size_t) params->commandList,
+              params->numGeneratedFrames);
+
     // check for status
     if (!Config::Instance()->FGEnabled.value_or_default() || _fgContext == nullptr || State::Instance().SCchanged
 #ifdef USE_QUEUE_FOR_FG
@@ -515,8 +595,9 @@ ffxReturnCode_t FSRFG_Dx12::DispatchCallback(ffxDispatchDescFrameGeneration* par
     }
 
     // If fg is active but upscaling paused
-    if (State::Instance().currentFeature == nullptr || !_isActive || params->frameID == _lastUpscaledFrameId ||
-        State::Instance().FGchanged || State::Instance().currentFeature->FrameCount() == 0)
+    if ((State::Instance().currentFeature == nullptr && State::Instance().activeFgInput == FGInput::Upscaler) ||
+        !_isActive || params->frameID == _lastUpscaledFrameId || State::Instance().FGchanged ||
+        (State::Instance().currentFeature && State::Instance().currentFeature->FrameCount() == 0))
     {
         LOG_WARN("(FG) Callback without active FG! fIndex:{}", fIndex);
 
@@ -540,16 +621,16 @@ ffxReturnCode_t FSRFG_Dx12::HudlessDispatchCallback(ffxDispatchDescFrameGenerati
 {
     // CallbackMutex.lock();
 
-    HRESULT result;
-    ffxReturnCode_t dispatchResult = FFX_API_RETURN_OK;
     int fIndex = params->frameID % BUFFER_COUNT;
+
+    params->reset = (_reset != 0);
 
     LOG_DEBUG("frameID: {}, commandList: {:X}, numGeneratedFrames: {}", params->frameID, (size_t) params->commandList,
               params->numGeneratedFrames);
 
     // if (params->frameID != _lastUpscaledFrameId && Config::Instance()->FGExecuteAfterCallback.value_or_default())
     //{
-    //     result = _commandList[fIndex]->Close();
+    //     auto result = _commandList[fIndex]->Close();
     //     LOG_DEBUG("fgCommandList[{}]->Close() result: {:X}", fIndex, (UINT) result);
 
     //    // if there is command list error return ERROR
@@ -566,22 +647,23 @@ ffxReturnCode_t FSRFG_Dx12::HudlessDispatchCallback(ffxDispatchDescFrameGenerati
     //}
 
     // check for status
-    if (!Config::Instance()->FGEnabled.value_or_default() || !Config::Instance()->FGHUDFix.value_or_default() ||
-        _fgContext == nullptr || State::Instance().SCchanged)
+    if (!Config::Instance()->FGEnabled.value_or_default() || _fgContext == nullptr || State::Instance().SCchanged)
     {
         LOG_WARN("Cancel async dispatch");
         params->numGeneratedFrames = 0;
     }
 
     // If fg is active but upscaling paused
-    if (State::Instance().currentFeature == nullptr || State::Instance().FGchanged || fIndex < 0 || !IsActive() ||
-        State::Instance().currentFeature->FrameCount() == 0 || params->frameID == _lastUpscaledFrameId)
+    if ((State::Instance().currentFeature == nullptr && State::Instance().activeFgInput == FGInput::Upscaler) ||
+        State::Instance().FGchanged || fIndex < 0 || !IsActive() ||
+        (State::Instance().currentFeature && State::Instance().currentFeature->FrameCount() == 0) ||
+        params->frameID == _lastUpscaledFrameId)
     {
         LOG_WARN("Upscaling paused! frameID: {}", params->frameID);
         params->numGeneratedFrames = 0;
     }
 
-    dispatchResult = FfxApiProxy::D3D12_Dispatch()(&_fgContext, &params->header);
+    auto dispatchResult = FfxApiProxy::D3D12_Dispatch()(&_fgContext, &params->header);
     LOG_DEBUG("D3D12_Dispatch result: {}, fIndex: {}", (UINT) dispatchResult, fIndex);
 
     _lastUpscaledFrameId = params->frameID;
@@ -676,6 +758,8 @@ void FSRFG_Dx12::StopAndDestroyContext(bool destroy, bool shutDown, bool useMute
 
         if (!(shutDown || State::Instance().isShuttingDown))
             LOG_INFO("D3D12_DestroyContext result: {0:X}", result);
+
+        _commandManager.Shutdown();
 
         _fgContext = nullptr;
     }
@@ -805,7 +889,7 @@ bool FSRFG_Dx12::ReleaseSwapchain(HWND hwnd)
     return true;
 }
 
-void FSRFG_Dx12::CreateContext(ID3D12Device* device, IFeature* upscalerContext)
+void FSRFG_Dx12::CreateContext(ID3D12Device* device, FG_Constants& fgConstants)
 {
     LOG_DEBUG("");
 
@@ -840,31 +924,38 @@ void FSRFG_Dx12::CreateContext(ID3D12Device* device, IFeature* upscalerContext)
     if (State::Instance().currentSwapchain->GetDesc(&desc) == S_OK)
     {
         createFg.displaySize = { desc.BufferDesc.Width, desc.BufferDesc.Height };
-        createFg.maxRenderSize = { upscalerContext->DisplayWidth(), upscalerContext->DisplayHeight() };
+
+        if (fgConstants.displayWidth != 0 && fgConstants.displayHeight != 0)
+            createFg.maxRenderSize = { fgConstants.displayWidth, fgConstants.displayHeight };
+        else
+            createFg.maxRenderSize = { desc.BufferDesc.Width, desc.BufferDesc.Height };
     }
     else
     {
         // this might cause issues
-        createFg.displaySize = { upscalerContext->DisplayWidth(), upscalerContext->DisplayHeight() };
-        createFg.maxRenderSize = { upscalerContext->DisplayWidth(), upscalerContext->DisplayHeight() };
+        createFg.displaySize = { fgConstants.displayWidth, fgConstants.displayHeight };
+        createFg.maxRenderSize = { fgConstants.displayWidth, fgConstants.displayHeight };
     }
 
     createFg.flags = 0;
 
-    if (upscalerContext->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_IsHDR)
+    if (fgConstants.flags & FG_Flags::Hdr)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_HIGH_DYNAMIC_RANGE;
 
-    if (upscalerContext->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_DepthInverted)
+    if (fgConstants.flags & FG_Flags::InvertedDepth)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_DEPTH_INVERTED;
 
-    if (upscalerContext->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_MVJittered)
+    if (fgConstants.flags & FG_Flags::JitteredMVs)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_MOTION_VECTORS_JITTER_CANCELLATION;
 
-    if ((upscalerContext->GetFeatureFlags() & NVSDK_NGX_DLSS_Feature_Flags_MVLowRes) == 0)
+    if (fgConstants.flags & FG_Flags::DisplayResolutionMVs)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_DISPLAY_RESOLUTION_MOTION_VECTORS;
 
-    if (Config::Instance()->FGAsync.value_or_default())
+    if (fgConstants.flags & FG_Flags::Async)
         createFg.flags |= FFX_FRAMEGENERATION_ENABLE_ASYNC_WORKLOAD_SUPPORT;
+
+    if (fgConstants.flags & FG_Flags::InfiniteDepth)
+        createFg.flags |= FFX_FRAMEGENERATION_ENABLE_DEPTH_INFINITE;
 
     createFg.backBufferFormat = ffxApiGetSurfaceFormatDX12(desc.BufferDesc.Format);
     createFg.header.pNext = &backendDesc.header;
@@ -879,4 +970,56 @@ void FSRFG_Dx12::CreateContext(ID3D12Device* device, IFeature* upscalerContext)
     _isActive = (retCode == FFX_API_RETURN_OK);
 
     LOG_DEBUG("Create");
+}
+
+void FSRFG_Dx12::EvaluateState(ID3D12Device* device, FG_Constants& fgConstants)
+{
+    LOG_FUNC();
+
+    if (!Config::Instance()->OverlayMenu.value_or_default())
+        return;
+
+    static bool lastInfiniteDepth = false;
+    bool currentInfiniteDepth = static_cast<bool>(fgConstants.flags & FG_Flags::InfiniteDepth);
+    if (lastInfiniteDepth != currentInfiniteDepth)
+    {
+        lastInfiniteDepth = currentInfiniteDepth;
+        LOG_DEBUG("Infinite Depth changed: {}", currentInfiniteDepth);
+        State::Instance().FGchanged = true;
+    }
+
+    if (!State::Instance().FGchanged && Config::Instance()->FGEnabled.value_or_default() &&
+        TargetFrame() < FrameCount() && FfxApiProxy::InitFfxDx12() && !IsActive() &&
+        HooksDx::CurrentSwapchainFormat() != DXGI_FORMAT_UNKNOWN)
+    {
+        CreateObjects(device);
+        CreateContext(device, fgConstants);
+        ResetCounters();
+        UpdateTarget();
+    }
+    else if ((!Config::Instance()->FGEnabled.value_or_default() || State::Instance().FGchanged) && IsActive())
+    {
+        StopAndDestroyContext(State::Instance().SCchanged, false, false);
+
+        if (State::Instance().activeFgInput == FGInput::Upscaler)
+            Hudfix_Dx12::ResetCounters();
+    }
+
+    if (State::Instance().FGchanged)
+    {
+        LOG_DEBUG("(FG) Frame generation paused");
+        ResetCounters();
+        UpdateTarget();
+
+        if (State::Instance().activeFgInput == FGInput::Upscaler)
+            Hudfix_Dx12::ResetCounters();
+
+        // Release FG mutex
+        if (Mutex.getOwner() == 2)
+            Mutex.unlockThis(2);
+
+        State::Instance().FGchanged = false;
+    }
+
+    State::Instance().SCchanged = false;
 }

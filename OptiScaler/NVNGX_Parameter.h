@@ -469,7 +469,7 @@ inline static void InitNGXParameters(NVSDK_NGX_Parameter* InParams)
     InParams->Set(NVSDK_NGX_Parameter_RTXValue, 0);
 
     // not ideal as it doesn't take different APIs into account
-    if (DLSSGMod::isLoaded())
+    if (DLSSGMod::isLoaded() || Config::Instance()->FGInput == FGInput::DLSSG)
     {
         InParams->Set("FrameGeneration.Available", 1);
         InParams->Set("FrameInterpolation.Available", 1);

@@ -224,7 +224,7 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
 
     if (willPresent)
     {
-        if (State::Instance().activeFgType == OptiFG && HooksDx::dx12UpscaleTrig &&
+        if (State::Instance().activeFgInput == FGInput::Upscaler && HooksDx::dx12UpscaleTrig &&
             HooksDx::readbackBuffer != nullptr && HooksDx::queryHeap != nullptr &&
             State::Instance().currentCommandQueue != nullptr)
         {
@@ -266,6 +266,12 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
     if (willPresent && fg != nullptr && fg->IsActive() &&
         Config::Instance()->FGUseMutexForSwapchain.value_or_default() && fg->Mutex.getOwner() != 2)
     {
+        IDXGISwapChain3* swapChain3 = nullptr;
+        ((IDXGISwapChain*) This)->QueryInterface(IID_PPV_ARGS(&swapChain3));
+        auto index = swapChain3->GetCurrentBackBufferIndex();
+
+        fg->ExecuteCmdList(index % COMMAND_BUFFER_COUNT);
+
         LOG_TRACE("Waiting FG->Mutex 2, current: {}", fg->Mutex.getOwner());
         fg->Mutex.lock(2);
 
@@ -283,8 +289,9 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
         LOG_TRACE("Accuired FG->Mutex: {}, fgMutexReleaseFrame: {}", fg->Mutex.getOwner(), _releaseMutexTargetFrame);
     }
 
-    if (willPresent && State::Instance().currentCommandQueue != nullptr && State::Instance().activeFgType == OptiFG &&
-        Config::Instance()->FGAsync.value_or_default() && fg->IsActive() && fg->TargetFrame() < fg->FrameCount() &&
+    if (willPresent && State::Instance().currentCommandQueue != nullptr &&
+        State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->FGAsync.value_or_default() &&
+        fg != nullptr && fg->IsActive() && fg->TargetFrame() < fg->FrameCount() &&
         fg->LastDispatchedFrame() != fg->FrameCount() && fg->UpscalerInputsReady())
     {
         State::Instance().fgTrigSource = "Present";
@@ -300,7 +307,7 @@ static HRESULT hkFGPresent(void* This, UINT SyncInterval, UINT Flags)
         }
     }
 
-    if (willPresent)
+    if (willPresent && State::Instance().activeFgInput == FGInput::Upscaler)
     {
         ResTrack_Dx12::ClearPossibleHudless();
         Hudfix_Dx12::PresentStart();
@@ -338,7 +345,7 @@ static HRESULT hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Fla
 
     auto willPresent = !(Flags & DXGI_PRESENT_TEST || Flags & DXGI_PRESENT_RESTART);
 
-    if (State::Instance().activeFgType != OptiFG && willPresent)
+    if (State::Instance().activeFgInput != FGInput::Upscaler && willPresent)
     {
         double ftDelta = 0.0f;
 
@@ -443,8 +450,8 @@ static HRESULT hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Fla
         ReflexHooks::update(false, false);
 
     // Upscaler GPU time computation
-    if (State::Instance().activeFgType != OptiFG && HooksDx::dx12UpscaleTrig && HooksDx::readbackBuffer != nullptr &&
-        HooksDx::queryHeap != nullptr && cq != nullptr)
+    if (State::Instance().activeFgInput != FGInput::Upscaler && HooksDx::dx12UpscaleTrig &&
+        HooksDx::readbackBuffer != nullptr && HooksDx::queryHeap != nullptr && cq != nullptr)
     {
         UINT64* timestampData;
         HooksDx::readbackBuffer->Map(0, nullptr, reinterpret_cast<void**>(&timestampData));
@@ -549,7 +556,7 @@ static HRESULT hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Fla
     // Draw overlay
     MenuOverlayDx::Present(pSwapChain, SyncInterval, Flags, pPresentParameters, pDevice, hWnd, isUWP);
 
-    if (State::Instance().activeFgType == OptiFG)
+    if (State::Instance().activeFgOutput == FGOutput::FSRFG)
     {
         fakenvapi::reportFGPresent(pSwapChain, fg != nullptr && fg->IsActive(), _frameCounter % 2);
     }
@@ -856,7 +863,7 @@ static HRESULT hkCreateSwapChain(IDXGIFactory* pFactory, IUnknown* pDevice, DXGI
     }
 
     ID3D12CommandQueue* cq = nullptr;
-    if (Config::Instance()->OverlayMenu.value_or_default() && State::Instance().activeFgType == FGType::OptiFG &&
+    if (Config::Instance()->OverlayMenu.value_or_default() && State::Instance().activeFgOutput == FGOutput::FSRFG &&
         !_skipFGSwapChainCreation && FfxApiProxy::InitFfxDx12() && pDevice->QueryInterface(IID_PPV_ARGS(&cq)) == S_OK)
     {
         cq->SetName(L"GameQueue");
@@ -976,11 +983,11 @@ static HRESULT hkCreateSwapChain(IDXGIFactory* pFactory, IUnknown* pDevice, DXGI
         return E_INVALIDARG;
     }
 
-    // Disable FG is amd dll is not found
-    if (State::Instance().activeFgType == FGType::OptiFG && !FfxApiProxy::InitFfxDx12())
+    // Disable FSR FG if amd dll is not found
+    if (State::Instance().activeFgOutput == FGOutput::FSRFG && !FfxApiProxy::InitFfxDx12())
     {
-        Config::Instance()->FGType.set_volatile_value(NoFG);
-        State::Instance().activeFgType = Config::Instance()->FGType.value_or_default();
+        Config::Instance()->FGOutput.set_volatile_value(FGOutput::NoFG);
+        State::Instance().activeFgOutput = Config::Instance()->FGOutput.value_or_default();
     }
 
     if (!_skipFGSwapChainCreation && Config::Instance()->FGDontUseSwapchainBuffers.value_or_default())
@@ -1140,8 +1147,8 @@ static HRESULT hkCreateSwapChainForHwnd(IDXGIFactory* This, IUnknown* pDevice, H
     }
 
     ID3D12CommandQueue* cq = nullptr;
-    if (State::Instance().activeFgType == FGType::OptiFG && !_skipFGSwapChainCreation && FfxApiProxy::InitFfxDx12() &&
-        pDevice->QueryInterface(IID_PPV_ARGS(&cq)) == S_OK)
+    if (State::Instance().activeFgOutput == FGOutput::FSRFG && !_skipFGSwapChainCreation &&
+        FfxApiProxy::InitFfxDx12() && pDevice->QueryInterface(IID_PPV_ARGS(&cq)) == S_OK)
     {
         cq->SetName(L"GameQueueHwnd");
         cq->Release();
@@ -1259,11 +1266,11 @@ static HRESULT hkCreateSwapChainForHwnd(IDXGIFactory* This, IUnknown* pDevice, H
         return E_INVALIDARG;
     }
 
-    // Disable FG is amd dll is not found
-    if (State::Instance().activeFgType == FGType::OptiFG && !FfxApiProxy::InitFfxDx12())
+    // Disable FSR FG if amd dll is not found
+    if (State::Instance().activeFgOutput == FGOutput::FSRFG && !FfxApiProxy::InitFfxDx12())
     {
-        Config::Instance()->FGType.set_volatile_value(NoFG);
-        State::Instance().activeFgType = Config::Instance()->FGType.value_or_default();
+        Config::Instance()->FGOutput.set_volatile_value(FGOutput::NoFG);
+        State::Instance().activeFgOutput = Config::Instance()->FGOutput.value_or_default();
     }
 
     if (!_skipFGSwapChainCreation && Config::Instance()->FGDontUseSwapchainBuffers.value_or_default())
@@ -1648,7 +1655,7 @@ static void HookToDevice(ID3D12Device* InDevice)
         DetourTransactionCommit();
     }
 
-    if (State::Instance().activeFgType == FGType::OptiFG && Config::Instance()->OverlayMenu.value_or_default())
+    if (State::Instance().activeFgInput == FGInput::Upscaler && Config::Instance()->OverlayMenu.value_or_default())
         ResTrack_Dx12::HookDevice(InDevice);
 }
 

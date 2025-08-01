@@ -2,6 +2,7 @@
 #include <Config.h>
 
 #include "fakenvapi.h"
+#include <magic_enum.hpp>
 
 // #define LOG_REFLEX_CALLS
 
@@ -46,11 +47,33 @@ NvAPI_Status ReflexHooks::hkNvAPI_D3D_SetLatencyMarker(IUnknown* pDev,
 #endif
     _updatesWithoutMarker = 0;
 
+    // LOG_DEBUG("frameID: {}, markerType: {}", pSetLatencyMarkerParams->frameID,
+    //           magic_enum::enum_name(pSetLatencyMarkerParams->markerType));
+
     // Some games just stop sending any async markers when DLSSG is disabled, so a reset is needed
     if (_lastAsyncMarkerFrameId + 10 < pSetLatencyMarkerParams->frameID)
         _dlssgDetected = false;
 
     State::Instance().rtssReflexInjection = pSetLatencyMarkerParams->frameID >> 32;
+
+    // For now this means that dlssg inputs require fakenvapi, as otherwise hooks won't be called
+    if (pSetLatencyMarkerParams->markerType == RENDERSUBMIT_START && State::Instance().activeFgInput == FGInput::DLSSG)
+    {
+        static ID3D12Device* device12 = nullptr;
+        static IUnknown* lastDevice = nullptr;
+
+        if (pDev != lastDevice)
+        {
+            lastDevice = pDev;
+            device12 = nullptr;
+        }
+
+        if (pDev && !device12)
+            pDev->QueryInterface(IID_PPV_ARGS(&device12));
+
+        if (device12)
+            State::Instance().slFGInputs.evaluateState(device12);
+    }
 
     return o_NvAPI_D3D_SetLatencyMarker(pDev, pSetLatencyMarkerParams);
 }

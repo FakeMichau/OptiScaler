@@ -3,6 +3,7 @@
 
 #include "upscalers/IFeature.h"
 #include "framegen/IFGFeature_Dx12.h"
+#include "framegen/Streamline_Inputs_Dx12.h"
 #include "misc/Quirks.h"
 
 #include <deque>
@@ -17,12 +18,31 @@ typedef enum API
     Vulkan,
 } API;
 
-typedef enum FGType : uint32_t
+enum class FGPreset : uint32_t
 {
     NoFG,
     OptiFG,
-    Nukems
-} FGType;
+    Nukems,
+};
+
+enum class FGInput : uint32_t
+{
+    NoFG,
+    Nukems,
+    FSRFG,
+    DLSSG, // technically Streamline inputs
+    XeFG,
+    Upscaler // OptiFG
+};
+
+enum class FGOutput : uint32_t
+{
+    NoFG,
+    Nukems,
+    FSRFG,
+    DLSSG,
+    XeFG
+};
 
 class State
 {
@@ -57,7 +77,12 @@ class State
     float lastFsrCameraFar = 0.0f;
 
     // Frame Generation
-    FGType activeFgType = FGType::NoFG;
+    FGPreset currentFgPreset = FGPreset::NoFG;
+    FGInput activeFgInput = FGInput::NoFG;
+    FGOutput activeFgOutput = FGOutput::NoFG;
+
+    // Streamline FG inputs
+    Sl_Inputs_Dx12 slFGInputs = {};
 
     // OptiFG
     bool FGonlyGenerated = false;
