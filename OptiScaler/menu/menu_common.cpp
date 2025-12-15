@@ -978,6 +978,9 @@ std::string MenuCommon::GetBackendName(std::string* code)
     if (*code == "fsr31")
         return "FSR 3.X";
 
+    if (*code == "fsrd")
+        return "FSR Denoiser";
+
     if (*code == "fsr21_12")
         return "FSR 2.1.2 w/Dx12";
 
@@ -1032,6 +1035,8 @@ void MenuCommon::AddDx11Backends(std::string* code, std::string* name)
         selectedUpscalerName = "FSR 2.1.2 w/Dx12";
     else if (State::Instance().newBackend == "fsr31" || (State::Instance().newBackend == "" && *code == "fsr31"))
         selectedUpscalerName = "FSR 3.X";
+    else if (State::Instance().newBackend == "fsrd" || (State::Instance().newBackend == "" && *code == "fsrd"))
+        selectedUpscalerName = "FSR Denoiser";
     else if (State::Instance().newBackend == "fsr31_12" || (State::Instance().newBackend == "" && *code == "fsr31_12"))
         selectedUpscalerName = fsr3xName;
     else if (Config::Instance()->DLSSEnabled.value_or_default() &&
@@ -1052,6 +1057,9 @@ void MenuCommon::AddDx11Backends(std::string* code, std::string* name)
 
         if (ImGui::Selectable("FSR 3.X", *code == "fsr31"))
             State::Instance().newBackend = "fsr31";
+
+        if (ImGui::Selectable("FSR Denoiser", *code == "fsrd"))
+            State::Instance().newBackend = "fsrd";
 
         if (ImGui::Selectable("XeSS w/Dx12", *code == "xess_12"))
             State::Instance().newBackend = "xess_12";
@@ -1083,6 +1091,8 @@ void MenuCommon::AddDx12Backends(std::string* code, std::string* name)
         selectedUpscalerName = "FSR 2.2.1";
     else if (State::Instance().newBackend == "fsr31" || (State::Instance().newBackend == "" && *code == "fsr31"))
         selectedUpscalerName = fsr3xName;
+    else if (State::Instance().newBackend == "fsrd" || (State::Instance().newBackend == "" && *code == "fsrd"))
+        selectedUpscalerName = "FSR Denoiser";
     else if (Config::Instance()->DLSSEnabled.value_or_default() &&
              (State::Instance().newBackend == "dlss" || (State::Instance().newBackend == "" && *code == "dlss")))
         selectedUpscalerName = "DLSS";
@@ -1102,6 +1112,9 @@ void MenuCommon::AddDx12Backends(std::string* code, std::string* name)
 
         if (ImGui::Selectable(fsr3xName.c_str(), *code == "fsr31"))
             State::Instance().newBackend = "fsr31";
+
+        if (ImGui::Selectable("FSR Denoiser", *code == "fsrd"))
+            State::Instance().newBackend = "fsrd";
 
         if (Config::Instance()->DLSSEnabled.value_or_default() && ImGui::Selectable("DLSS", *code == "dlss"))
             State::Instance().newBackend = "dlss";
@@ -2496,14 +2509,14 @@ bool MenuCommon::RenderMenu()
 
                     // FFX -----------------
                     if (currentBackend.rfind("fsr", 0) == 0 && state.currentFeature->Name() != "DLSSD" &&
-                        (currentBackend == "fsr31" || currentBackend == "fsr31_12"))
+                        (currentBackend == "fsr31" || currentBackend == "fsrd" || currentBackend == "fsr31_12"))
                     {
                         ImGui::SeparatorText("FFX Settings");
 
                         if (_ffxUpscalerIndex < 0)
                             _ffxUpscalerIndex = config->FfxUpscalerIndex.value_or_default();
 
-                        if (currentBackend == "fsr31" ||
+                        if (currentBackend == "fsr31" || currentBackend == "fsrd" ||
                             currentBackend == "fsr31_12" && state.ffxUpscalerVersionNames.size() > 0)
                         {
                             ImGui::PushItemWidth(135.0f * config->MenuScale.value_or_default());

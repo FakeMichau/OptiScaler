@@ -199,6 +199,7 @@ DEFINE_NAME_VECTORS(fsr3BE, "ffx_backend_dx12_x64");
 DEFINE_NAME_VECTORS(ffxDx12, "amd_fidelityfx_dx12", "amd_fidelityfx_loader_dx12");
 DEFINE_NAME_VECTORS(ffxDx12Upscaler, "amd_fidelityfx_upscaler_dx12");
 DEFINE_NAME_VECTORS(ffxDx12FG, "amd_fidelityfx_framegeneration_dx12");
+DEFINE_NAME_VECTORS(ffxDx12D, "amd_fidelityfx_denoiser_dx12");
 DEFINE_NAME_VECTORS(ffxVk, "amd_fidelityfx_vk");
 
 inline static bool CompareFileName(std::string* first, std::string* second)

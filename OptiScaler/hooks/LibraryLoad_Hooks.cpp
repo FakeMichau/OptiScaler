@@ -465,6 +465,16 @@ HMODULE LibraryLoadHooks::LoadLibraryCheckW(std::wstring libName, LPCWSTR lpLibF
         return module;
     }
 
+    if (CheckDllNameW(&libName, &ffxDx12DNamesW))
+    {
+        auto module = NtdllProxy::LoadLibraryExW_Ldr(libName.c_str(), NULL, 0);
+
+        if (module != nullptr)
+            FfxApiProxy::InitFfxDx12_D(module);
+
+        return module;
+    }
+
     if (CheckDllNameW(&libName, &ffxVkNamesW))
     {
         auto module = LoadFfxapiVk(libName);

@@ -131,7 +131,7 @@ FSR31FeatureVk::FSR31FeatureVk(unsigned int InHandleId, NVSDK_NGX_Parameter* InP
 
 bool FSR31FeatureVk::InitFSR3(const NVSDK_NGX_Parameter* InParameters)
 {
-    LOG_DEBUG("FSR31FeatureVk::InitFSR3");
+    LOG_DEBUG("FSR31FeatureVk::InitFSRD");
 
     if (!ModuleLoaded())
         return false;

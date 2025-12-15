@@ -615,10 +615,21 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_CreateFeature(ID3D12GraphicsComma
 
         Dx12Contexts[handleId] = {};
 
-        if (!FeatureProvider_Dx12::GetFeature("dlssd", handleId, InParameters, &Dx12Contexts[handleId].feature))
+        if (Config::Instance()->DLSSDCopingOnAMD.value_or_default())
         {
-            LOG_ERROR("DLSSD can't created");
-            return NVSDK_NGX_Result_Fail;
+            if (!FeatureProvider_Dx12::GetFeature("fsrd", handleId, InParameters, &Dx12Contexts[handleId].feature))
+            {
+                LOG_ERROR("DLSSD can't created on AMD");
+                return NVSDK_NGX_Result_Fail;
+            }
+        }
+        else
+        {
+            if (!FeatureProvider_Dx12::GetFeature("dlssd", handleId, InParameters, &Dx12Contexts[handleId].feature))
+            {
+                LOG_ERROR("DLSSD can't created");
+                return NVSDK_NGX_Result_Fail;
+            }
         }
     }
 
@@ -772,7 +783,9 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_GetFeatureRequirements(
 
     if (FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_SuperSampling ||
         ((DLSSGMod::isDx12Available() || Config::Instance()->FGInput == FGInput::DLSSG) &&
-         FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_FrameGeneration))
+         FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_FrameGeneration) ||
+        (Config::Instance()->DLSSDCopingOnAMD.value_or_default() &&
+         FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_RayReconstruction))
     {
         if (OutSupported == nullptr)
             OutSupported = new NVSDK_NGX_FeatureRequirement();

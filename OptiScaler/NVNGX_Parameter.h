@@ -10,7 +10,7 @@
 // #define ENABLE_ENCAPSULATED_PARAMS
 
 // Log NVParam Set/Get operations
-// #define LOG_PARAMS_VALUES
+#define LOG_PARAMS_VALUES
 
 #ifdef LOG_PARAMS_VALUES
 #define LOG_PARAM(msg, ...) spdlog::trace(__FUNCTION__ " " msg, ##__VA_ARGS__)
@@ -484,7 +484,7 @@ inline static void InitNGXParameters(NVSDK_NGX_Parameter* InParams)
             InParams->Set("SuperSamplingDenoising.MinDriverVersionMinor", 0);
         }
 
-        InParams->Set("SuperSamplingDenoising.Available", 0);
+        InParams->Set("SuperSamplingDenoising.Available", Config::Instance()->DLSSDCopingOnAMD.value_or_default());
         InParams->Set("SuperSamplingDenoising.FeatureInitResult", 0);
     }
 
