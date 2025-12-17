@@ -8,7 +8,15 @@
 class FSRDFeatureDx12 : public FSRDFeature, public IFeature_Dx12
 {
   private:
+    bool CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSource, D3D12_RESOURCE_STATES InState,
+                              ID3D12Resource** OutResource, bool UAV = false, bool depth = false);
+    void ResourceBarrier(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* resource,
+                         D3D12_RESOURCE_STATES beforeState, D3D12_RESOURCE_STATES afterState);
+    bool CopyResource(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* source,
+                                       ID3D12Resource** target, D3D12_RESOURCE_STATES sourceState);
     NVSDK_NGX_Parameter* SetParameters(NVSDK_NGX_Parameter* InParameters);
+    ID3D12Resource* _buffer;
+    DXGI_FORMAT format;
 
   protected:
     bool InitFSRD(const NVSDK_NGX_Parameter* InParameters);

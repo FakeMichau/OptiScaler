@@ -51,6 +51,91 @@ bool FSRDFeatureDx12::Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* In
     return false;
 }
 
+bool FSRDFeatureDx12::CreateBufferResource(ID3D12Device* device, ID3D12Resource* source,
+                                           D3D12_RESOURCE_STATES initialState, ID3D12Resource** target, bool UAV,
+                                           bool depth)
+{
+    if (device == nullptr || source == nullptr)
+        return false;
+
+    auto inDesc = source->GetDesc();
+
+    if (UAV)
+        inDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+    if (depth)
+        inDesc.Format = DXGI_FORMAT_R32_FLOAT;
+
+    if (*target != nullptr)
+    {
+        //(*target)->Release();
+        //(*target) = nullptr;
+
+        auto bufDesc = (*target)->GetDesc();
+
+        if (bufDesc.Width != inDesc.Width || bufDesc.Height != inDesc.Height || bufDesc.Format != inDesc.Format ||
+            bufDesc.Flags != inDesc.Flags)
+        {
+            (*target)->Release();
+            (*target) = nullptr;
+        }
+        else
+        {
+            return true;
+        }
+    }
+
+    D3D12_HEAP_PROPERTIES heapProperties;
+    D3D12_HEAP_FLAGS heapFlags;
+    auto hr = source->GetHeapProperties(&heapProperties, &heapFlags);
+
+    hr = device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &inDesc, initialState, nullptr,
+                                         IID_PPV_ARGS(target));
+
+    if (hr != S_OK)
+    {
+        LOG_ERROR("CreateCommittedResource result: {:X}", (UINT64) hr);
+        return false;
+    }
+
+    LOG_DEBUG("Created new one: {}x{}", inDesc.Width, inDesc.Height);
+
+    return true;
+}
+
+void FSRDFeatureDx12::ResourceBarrier(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* resource,
+                                      D3D12_RESOURCE_STATES beforeState, D3D12_RESOURCE_STATES afterState)
+{
+    if (beforeState == afterState)
+        return;
+
+    D3D12_RESOURCE_BARRIER barrier = {};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Transition.pResource = resource;
+    barrier.Transition.StateBefore = beforeState;
+    barrier.Transition.StateAfter = afterState;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    cmdList->ResourceBarrier(1, &barrier);
+}
+
+
+bool FSRDFeatureDx12::CopyResource(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* source, ID3D12Resource** target,
+                                   D3D12_RESOURCE_STATES sourceState)
+{
+    auto result = true;
+
+    ResourceBarrier(cmdList, source, sourceState, D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+    if (CreateBufferResource(Device, source, D3D12_RESOURCE_STATE_COPY_DEST, target))
+        cmdList->CopyResource(*target, source);
+    else
+        result = false;
+
+    ResourceBarrier(cmdList, source, D3D12_RESOURCE_STATE_COPY_SOURCE, sourceState);
+
+    return result;
+}
+
 bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters)
 {
     LOG_FUNC();
@@ -81,6 +166,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     auto getDefaultSettingsResult = FfxApiProxy::D3D12_Query(&_denoiserContext, &denoiserDefaultSettings.header);
 
     // Adjust settings here
+    //denoiserSettings.maxRadiance = 255;
 
     ffxConfigureDescDenoiserSettings denoiserSettingsDesc = {};
     denoiserSettingsDesc.header.type = FFX_API_CONFIGURE_DESC_TYPE_DENOISER_SETTINGS;
@@ -88,11 +174,87 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     auto setSettingsResult = FfxApiProxy::D3D12_Configure(&_denoiserContext, &denoiserSettingsDesc.header);
 
+    // Signals struct
+    ffxDispatchDescDenoiserInput1Signal denoiserInputs = {};
+    denoiserInputs.header.type = FFX_API_DISPATCH_DESC_INPUT_1_SIGNAL_TYPE_DENOISER;
+
+    ID3D12Resource* fusedAlbedo;
+    InParameters->Get("DLSS.Input.DiffuseAlbedo", &fusedAlbedo); // TODO: this is wrong, need to combine albedos
+
+    FfxApiDenoiserSignal signals;
+    ID3D12Resource* color {};
+    static ID3D12Resource* middle {};
+    ID3D12Resource* output {};
+    InParameters->Get(NVSDK_NGX_Parameter_Color, &color);
+    InParameters->Get(NVSDK_NGX_Parameter_Output, &output);
+    //CopyResource(InCommandList, color, &middle, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    //CopyResource(InCommandList, middle, &output, D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+    CreateBufferResource(Device, color, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &middle);
+
+    if (Config::Instance()->OverrideSharpness.value_or_default())
+    {
+        CopyResource(InCommandList, color, &output, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        _frameCount++;
+        return true;
+    }
+
+    signals.input = ffxApiGetResourceDX12(color, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    signals.output = ffxApiGetResourceDX12(middle, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+
+    denoiserInputs.fusedAlbedo = ffxApiGetResourceDX12(fusedAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserInputs.radiance = signals;
+
+    // Params struct
     ffxDispatchDescDenoiser denoiserParams {};
     denoiserParams.header.type = FFX_API_DISPATCH_DESC_TYPE_DENOISER;
+    denoiserParams.header.pNext = &denoiserInputs.header;
+
+    ID3D12Resource* linearDepth;
+    InParameters->Get(NVSDK_NGX_Parameter_Depth, &linearDepth); // TODO: this is wrong, it's not linear
+
+    ID3D12Resource* motionVectors;
+    InParameters->Get(NVSDK_NGX_Parameter_MotionVectors, &motionVectors); // TODO: those MVs are only 2D, not 2.5D
+
+    ID3D12Resource* normals;
+    InParameters->Get(NVSDK_NGX_Parameter_GBuffer_Normals, &normals); // TODO: if GBuffer_Roughness is null then this might contain roughness, those are float3 normals, need float2
+
+    ID3D12Resource* specularAlbedo;
+    InParameters->Get("DLSS.Input.SpecularAlbedo", &specularAlbedo); // TODO: add NoV (the saturated dot product of the view vector and surface normal) to alpha
+
+    ID3D12Resource* diffuseAlbedo;
+    InParameters->Get("DLSS.Input.DiffuseAlbedo", &diffuseAlbedo); // TODO: missing metalness
+    
+    // Final assembly
+    denoiserParams.commandList = InCommandList;
+
+    denoiserParams.linearDepth = ffxApiGetResourceDX12(linearDepth, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.motionVectors = ffxApiGetResourceDX12(motionVectors, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.normals = ffxApiGetResourceDX12(normals, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.specularAlbedo = ffxApiGetResourceDX12(specularAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.diffuseAlbedo = ffxApiGetResourceDX12(diffuseAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+
+    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
+    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);
+
+    InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_X, &denoiserParams.motionVectorScale.x);
+    InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_Y, &denoiserParams.motionVectorScale.y);
+
+    GetRenderResolution(InParameters, &denoiserParams.renderSize.width, &denoiserParams.renderSize.height);
+
+    denoiserParams.deltaTime = (float) GetDeltaTime();
+
+    denoiserParams.frameIndex = _frameCount;
+
+    denoiserParams.flags |= FFX_DENOISER_DISPATCH_NON_GAMMA_ALBEDO;
+
+    auto denoiserResult = FfxApiProxy::D3D12_Dispatch(&_denoiserContext, &denoiserParams.header);
 
 
 
+    CopyResource(InCommandList, middle, &output, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    _frameCount++;
+    return true;
 
 
 
