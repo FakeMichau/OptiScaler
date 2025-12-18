@@ -17,6 +17,7 @@ class FSRDFeatureDx12 : public FSRDFeature, public IFeature_Dx12
     NVSDK_NGX_Parameter* SetParameters(NVSDK_NGX_Parameter* InParameters);
     ID3D12Resource* _buffer;
     DXGI_FORMAT format;
+    FfxApiFloatCoords3D cameraPrevPosition;
 
   protected:
     bool InitFSRD(const NVSDK_NGX_Parameter* InParameters);

@@ -5,6 +5,9 @@
 #include <proxies/FfxApi_Proxy.h>
 
 #include "FSRDFeature_Dx12.h"
+#include <DirectXMath.h>
+
+using namespace DirectX;
 
 NVSDK_NGX_Parameter* FSRDFeatureDx12::SetParameters(NVSDK_NGX_Parameter* InParameters)
 {
@@ -210,11 +213,131 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     denoiserParams.header.type = FFX_API_DISPATCH_DESC_TYPE_DENOISER;
     denoiserParams.header.pNext = &denoiserInputs.header;
 
-    ID3D12Resource* linearDepth;
-    InParameters->Get(NVSDK_NGX_Parameter_Depth, &linearDepth); // TODO: this is wrong, it's not linear
+    int depthNonLinear = 0;
+    InParameters->Get("DLSS.Use.HW.Depth", &depthNonLinear);
+
+    // needed to convert to linear
+    // return (zNear * zFar) / (zFar - depth * (zFar - zNear));
+    // Get data from SL, even when not using SL for DLSSD ?
+    bool depthInverted = DepthInverted();
+    float cameraFar = 0.0f;
+    float cameraNear = 0.0f;
+    float cameraFovAngleVertical = 0.0f;
+    float cameraAspectRatio = 0.0f;
+
+    auto loadCameraMatrix = [&]()
+    {
+        float(*cameraViewToClip)[4] = nullptr;
+        InParameters->Get("ViewToClipMatrix", reinterpret_cast<void**>(&cameraViewToClip));
+
+        if (!cameraViewToClip)
+            return false;
+
+        float projMatrix[4][4];
+        memcpy(projMatrix, cameraViewToClip, sizeof(projMatrix));
+
+        // BUG: Various RTX Remix-based games pass in an identity matrix which is completely useless. No
+        // idea why.
+        const bool isEmptyOrIdentityMatrix = [&]()
+        {
+            float m[4][4] = {};
+            if (memcmp(projMatrix, m, sizeof(m)) == 0)
+                return true;
+
+            m[0][0] = m[1][1] = m[2][2] = m[3][3] = 1.0f;
+            return memcmp(projMatrix, m, sizeof(m)) == 0;
+        }();
+
+        if (isEmptyOrIdentityMatrix)
+            return false;
+
+        // a 0 0 0
+        // 0 b 0 0
+        // 0 0 c e
+        // 0 0 d 0
+        const double a = projMatrix[0][0];
+        const double b = projMatrix[1][1];
+        const double c = projMatrix[2][2];
+        const double d = projMatrix[3][2];
+        const double e = projMatrix[2][3];
+
+        cameraAspectRatio = static_cast<float>(b / a);
+
+        if (e < 0.0)
+        {
+            cameraNear = static_cast<float>((c == 0.0) ? 0.0 : (d / c));
+            cameraFar = static_cast<float>(d / (c + 1.0));
+        }
+        else
+        {
+            cameraNear = static_cast<float>((c == 0.0) ? 0.0 : (-d / c));
+            cameraFar = static_cast<float>(-d / (c - 1.0));
+        }
+
+        if (depthInverted)
+            std::swap(cameraNear, cameraFar);
+
+        cameraFovAngleVertical = static_cast<float>(2.0 * std::atan(1.0 / b));
+        return true;
+    };
+
+    if (!loadCameraMatrix())
+        LOG_ERROR("Can't get camera parameters");
+
+    // TODO: decide what to do with this, maybe not an issue with the denoiser?
+    //if (cameraNear != 0.0f && cameraFar == 0.0f)
+    //{
+    //    // A CameraFar value of zero indicates an infinite far plane. Due to a bug in FSR's
+    //    // setupDeviceDepthToViewSpaceDepthParams function, CameraFar must always be greater than
+    //    // CameraNear when in use.
+    //    desc.DepthPlaneInfinite = true;
+    //    cameraFar = cameraNear + 1.0f;
+    //}
+
+    FfxApiFloatCoords3D cameraPosition; // (PrevPos - CurrentPos)
+
+    auto loadCameraPosition = [&]()
+    {
+        float(*cameraWorldToView)[4] = nullptr;
+        InParameters->Get("WorldToViewMatrix", reinterpret_cast<void**>(&cameraWorldToView));
+
+        if (!cameraWorldToView)
+            return false;
+
+        XMMATRIX worldToView;
+        memcpy(&worldToView, cameraWorldToView, sizeof(worldToView));
+
+        const XMMATRIX viewToWorld = XMMatrixInverse(nullptr, worldToView);
+
+        const auto position = viewToWorld.r[3];
+        const auto right = viewToWorld.r[0];
+        const auto up = viewToWorld.r[1];
+        const auto forward = viewToWorld.r[2];
+
+        cameraPosition = { XMVectorGetX(position), XMVectorGetY(position), XMVectorGetZ(position) };
+        denoiserParams.cameraRight = { XMVectorGetX(right), XMVectorGetY(right), XMVectorGetZ(right) };
+        denoiserParams.cameraUp = { XMVectorGetX(up), XMVectorGetY(up), XMVectorGetZ(up) };
+        denoiserParams.cameraForward = { XMVectorGetX(forward), XMVectorGetY(forward), XMVectorGetZ(forward) };
+
+        return true;
+    };
+
+    if (!loadCameraPosition())
+        LOG_ERROR("Can't get camera position");
+
+    ID3D12Resource* depth;
+    InParameters->Get(NVSDK_NGX_Parameter_Depth, &depth); // TODO: this is wrong, it's likely not linear
 
     ID3D12Resource* motionVectors;
     InParameters->Get(NVSDK_NGX_Parameter_MotionVectors, &motionVectors); // TODO: those MVs are only 2D, not 2.5D
+
+    int roughnessInNormals = 0;
+    InParameters->Get("DLSS.Roughness.Mode", &roughnessInNormals);
+
+    ID3D12Resource* roughness;
+    if (roughnessInNormals == 0) {
+        InParameters->Get(NVSDK_NGX_Parameter_GBuffer_Roughness, &roughness);
+    }
 
     ID3D12Resource* normals;
     InParameters->Get(NVSDK_NGX_Parameter_GBuffer_Normals, &normals); // TODO: if GBuffer_Roughness is null then this might contain roughness, those are float3 normals, need float2
@@ -228,7 +351,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     // Final assembly
     denoiserParams.commandList = InCommandList;
 
-    denoiserParams.linearDepth = ffxApiGetResourceDX12(linearDepth, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.linearDepth = ffxApiGetResourceDX12(depth, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.motionVectors = ffxApiGetResourceDX12(motionVectors, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.normals = ffxApiGetResourceDX12(normals, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.specularAlbedo = ffxApiGetResourceDX12(specularAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
@@ -239,6 +362,16 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_X, &denoiserParams.motionVectorScale.x);
     InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_Y, &denoiserParams.motionVectorScale.y);
+
+    denoiserParams.cameraPositionDelta.x = cameraPrevPosition.x - cameraPosition.x;
+    denoiserParams.cameraPositionDelta.y = cameraPrevPosition.y - cameraPosition.y;
+    denoiserParams.cameraPositionDelta.z = cameraPrevPosition.z - cameraPosition.z;
+    std::swap(cameraPosition, cameraPrevPosition);
+
+    denoiserParams.cameraAspectRatio = cameraAspectRatio;
+    denoiserParams.cameraNear = cameraNear;
+    denoiserParams.cameraFar = cameraFar;
+    denoiserParams.cameraFovAngleVertical = cameraFovAngleVertical;
 
     GetRenderResolution(InParameters, &denoiserParams.renderSize.width, &denoiserParams.renderSize.height);
 
