@@ -4,6 +4,7 @@
 
 #include "dx12/ffx_api_dx12.h"
 #include "proxies/FfxApi_Proxy.h"
+#include <shaders/denoiser_transfer/DNT_Dx12.h>
 
 class FSRDFeatureDx12 : public FSRDFeature, public IFeature_Dx12
 {
@@ -20,6 +21,7 @@ class FSRDFeatureDx12 : public FSRDFeature, public IFeature_Dx12
     FfxApiFloatCoords3D cameraPrevPosition;
 
   protected:
+    std::unique_ptr<DNT_Dx12> DenoiserTransfer = nullptr;
     bool InitFSRD(const NVSDK_NGX_Parameter* InParameters);
 
   public:

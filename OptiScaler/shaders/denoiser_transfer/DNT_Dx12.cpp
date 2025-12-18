@@ -4,32 +4,30 @@
 
 #include <Config.h>
 
-bool DNT_Dx12::CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSource, D3D12_RESOURCE_STATES InState)
+bool DNT_Dx12::ResourceWithState::CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSource,
+                                             D3D12_RESOURCE_STATES InState)
 {
     auto resourceFlags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS |
                          D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
 
-    auto result = Shader_Dx12::CreateBufferResource(InDevice, InSource, InState, &_buffer, resourceFlags);
+    auto result = Shader_Dx12::CreateBufferResource(InDevice, InSource, InState, &rawResource, resourceFlags);
 
-    if (result)
-    {
-        _buffer->SetName(L"DNT_Buffer");
-        _bufferState = InState;
-    }
+    // If CreateBufferResource create a new resource then we need to track the initial state
+    if (result && state == D3D12_INVALID_STATE)
+        state = InState;
 
     return result;
 }
 
-void DNT_Dx12::SetBufferState(ID3D12GraphicsCommandList* InCommandList, D3D12_RESOURCE_STATES InState)
+void DNT_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCommandList,
+                                                 D3D12_RESOURCE_STATES InState)
 {
-    return Shader_Dx12::SetBufferState(InCommandList, InState, _buffer, &_bufferState);
+    return Shader_Dx12::SetBufferState(InCommandList, InState, rawResource, &state);
 }
 
-bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InResource,
-                         ID3D12Resource* InMotionVectors, DntConstants InConstants, ID3D12Resource* OutResource)
+bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth, DntConstants InConstants)
 {
-    if (!_init || InDevice == nullptr || InCmdList == nullptr || InResource == nullptr || OutResource == nullptr ||
-        InMotionVectors == nullptr)
+    if (!_init || InDevice == nullptr || InCmdList == nullptr || InDepth == nullptr || linearDepth.rawResource == nullptr)
         return false;
 
     LOG_DEBUG("[{0}] Start!", _name);
@@ -38,59 +36,33 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     _counter = _counter % DNT_NUM_OF_HEAPS;
     FrameDescriptorHeap& currentHeap = _frameHeaps[_counter];
 
-    auto inDesc = InResource->GetDesc();
-    auto mvDesc = InMotionVectors->GetDesc();
-    auto outDesc = OutResource->GetDesc();
+    auto inDepthDesc = InDepth->GetDesc();
+    auto outDepthDesc = linearDepth.rawResource->GetDesc();
 
     // Create SRV for Input Texture
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = Shader_Dx12::TranslateTypelessFormats(inDesc.Format);
+    srvDesc.Format = Shader_Dx12::TranslateTypelessFormats(inDepthDesc.Format);
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     srvDesc.Texture2D.MipLevels = 1;
 
-    InDevice->CreateShaderResourceView(InResource, &srvDesc, currentHeap.GetSrvCPU(0));
-
-    // Create SRV for Motion Texture
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc2 = {};
-    srvDesc2.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc2.Format = Shader_Dx12::TranslateTypelessFormats(mvDesc.Format);
-    srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc2.Texture2D.MipLevels = 1;
-
-    InDevice->CreateShaderResourceView(InMotionVectors, &srvDesc2, currentHeap.GetSrvCPU(1));
+    InDevice->CreateShaderResourceView(InDepth, &srvDesc, currentHeap.GetSrvCPU(0));
 
     // Create UAV for Output Texture
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-    uavDesc.Format = Shader_Dx12::TranslateTypelessFormats(outDesc.Format);
+    uavDesc.Format = Shader_Dx12::TranslateTypelessFormats(outDepthDesc.Format);
     uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
     uavDesc.Texture2D.MipSlice = 0;
 
-    InDevice->CreateUnorderedAccessView(OutResource, nullptr, &uavDesc, currentHeap.GetUavCPU(0));
+    InDevice->CreateUnorderedAccessView(linearDepth.rawResource, nullptr, &uavDesc, currentHeap.GetUavCPU(0));
 
     InternalConstants constants {};
 
-    if (Config::Instance()->ContrastEnabled.value_or_default())
-        constants.Contrast = Config::Instance()->Contrast.value_or_default() * -1.0f;
-    else
-        constants.Contrast = -100.0f;
-
-    constants.DisplayHeight = InConstants.DisplayHeight;
-    constants.DisplayWidth = InConstants.DisplayWidth;
-    constants.DynamicSharpenEnabled = Config::Instance()->MotionSharpnessEnabled.value_or_default() ? 1 : 0;
-    constants.MotionSharpness = Config::Instance()->MotionSharpness.value_or_default();
-    constants.MvScaleX = InConstants.MvScaleX;
-    constants.MvScaleY = InConstants.MvScaleY;
-    constants.Sharpness = InConstants.Sharpness;
-    constants.Debug = Config::Instance()->MotionSharpnessDebug.value_or_default() ? 1 : 0;
-    constants.Threshold = Config::Instance()->MotionThreshold.value_or_default();
-    constants.ScaleLimit = Config::Instance()->MotionScaleLimit.value_or_default();
-    constants.DisplaySizeMV = InConstants.DisplaySizeMV ? 1 : 0;
-
-    if (InConstants.RenderWidth == 0 || InConstants.DisplayWidth == 0)
-        constants.MotionTextureScale = 1.0f;
-    else
-        constants.MotionTextureScale = (float) InConstants.RenderWidth / (float) InConstants.DisplayWidth;
+    constants.depthNonLinear = InConstants.depthNonLinear;
+    constants.cameraFar = InConstants.cameraFar;
+    constants.cameraNear = InConstants.cameraNear;
+    
+    // TODO: if depth is linear then don't pass to shader??? or skip math in the shader
 
     // Copy the updated constant buffer data to the constant buffer resource
     BYTE* pCBDataBegin;
@@ -129,8 +101,8 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     UINT dispatchWidth = 0;
     UINT dispatchHeight = 0;
 
-    dispatchWidth = static_cast<UINT>((inDesc.Width + InNumThreadsX - 1) / InNumThreadsX);
-    dispatchHeight = (inDesc.Height + InNumThreadsY - 1) / InNumThreadsY;
+    dispatchWidth = static_cast<UINT>((inDepthDesc.Width + InNumThreadsX - 1) / InNumThreadsX);
+    dispatchHeight = (inDepthDesc.Height + InNumThreadsY - 1) / InNumThreadsY;
 
     InCmdList->Dispatch(dispatchWidth, dispatchHeight, 1);
 
@@ -148,8 +120,8 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
     LOG_DEBUG("{0} start!", _name);
 
     CD3DX12_DESCRIPTOR_RANGE1 descriptorRanges[] = {
-        // 2 SRVs starting at register t0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0, 0),
+        // 1 SRV starting at register t0, space 0
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0),
 
         // 1 UAV starting at register u0, space 0
         CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0),
@@ -219,22 +191,23 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
         return;
     }
 
-    if (Config::Instance()->UsePrecompiledShaders.value_or_default())
-    {
-        D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
-        computePsoDesc.pRootSignature = _rootSignature;
-        computePsoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-        computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(reinterpret_cast<const void*>(rcas_cso), sizeof(rcas_cso));
-        auto hr = InDevice->CreateComputePipelineState(&computePsoDesc, __uuidof(ID3D12PipelineState*),
-                                                       (void**) &_pipelineState);
+    // TODO: Add precompiled shaders
+    //if (Config::Instance()->UsePrecompiledShaders.value_or_default())
+    //{
+    //    D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
+    //    computePsoDesc.pRootSignature = _rootSignature;
+    //    computePsoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+    //    computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(reinterpret_cast<const void*>(rcas_cso), sizeof(rcas_cso));
+    //    auto hr = InDevice->CreateComputePipelineState(&computePsoDesc, __uuidof(ID3D12PipelineState*),
+    //                                                   (void**) &_pipelineState);
 
-        if (FAILED(hr))
-        {
-            LOG_ERROR("[{0}] CreateComputePipelineState error: {1:X}", _name, hr);
-            return;
-        }
-    }
-    else
+    //    if (FAILED(hr))
+    //    {
+    //        LOG_ERROR("[{0}] CreateComputePipelineState error: {1:X}", _name, hr);
+    //        return;
+    //    }
+    //}
+    //else
     {
         // Compile shader blobs
         ID3DBlob* _recEncodeShader = DNT_CompileShader(dntCode.c_str(), "CSMain", "cs_5_0");
@@ -263,7 +236,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
 
     for (int i = 0; i < DNT_NUM_OF_HEAPS; i++)
     {
-        if (!_frameHeaps[i].Initialize(InDevice, 2, 1, 1))
+        if (!_frameHeaps[i].Initialize(InDevice, 1, 1, 1))
         {
             LOG_ERROR("[{0}] Failed to init heap", _name);
             _init = false;
@@ -299,10 +272,10 @@ DNT_Dx12::~DNT_Dx12()
         _frameHeaps[i].ReleaseHeaps();
     }
 
-    if (_buffer != nullptr)
+    if (linearDepth.rawResource != nullptr)
     {
-        _buffer->Release();
-        _buffer = nullptr;
+        linearDepth.rawResource->Release();
+        linearDepth.rawResource = nullptr;
     }
 
     if (_constantBuffer != nullptr)

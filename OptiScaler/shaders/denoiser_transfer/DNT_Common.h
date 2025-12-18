@@ -5,28 +5,38 @@
 
 struct DntConstants
 {
-    float Sharpness;
-
-    // Motion Vector Stuff
-    bool DynamicSharpenEnabled;
-    bool DisplaySizeMV;
-    bool Debug;
-
-    float MotionSharpness;
-    float MotionTextureScale;
-    float MvScaleX;
-    float MvScaleY;
-    float Threshold;
-    float ScaleLimit;
-
-    int RenderWidth;
-    int RenderHeight;
-    int DisplayWidth;
-    int DisplayHeight;
+    int depthNonLinear = false;
+    int depthInverted = false;
+    float cameraFar = 0.0f;
+    float cameraNear = 0.0f;
 };
 
 static std::string dntCode = R"(
+cbuffer Params : register(b0)
+{
+    int depthNonLinear;
+    int depthInverted;
+    float cameraFar;
+    float cameraNear;
+};
 
+Texture2D<float> DepthInput : register(t0);
+RWTexture2D<float> LinearDepthOutput : register(u0);
+
+[numthreads(32, 32, 1)]
+void CSMain(uint3 DTid : SV_DispatchThreadID)
+{
+    float depth = DepthInput.Load(int3(DTid.xy, 0)).x;
+    
+    float linearDepth = 0.0f;
+    
+    if (depthInverted > 0)
+        linearDepth = (cameraNear * cameraFar) / (cameraFar - depth * (cameraFar - cameraNear));
+    else
+        linearDepth = (cameraNear * cameraFar) / (cameraNear + depth * (cameraFar - cameraNear));
+    
+    LinearDepthOutput[DTid.xy] = (linearDepth - cameraNear) / (cameraFar - cameraNear);
+}
 )";
 
 static ID3DBlob* DNT_CompileShader(const char* shaderCode, const char* entryPoint, const char* target)

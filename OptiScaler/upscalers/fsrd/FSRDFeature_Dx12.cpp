@@ -47,6 +47,7 @@ bool FSRDFeatureDx12::Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* In
         OutputScaler = std::make_unique<OS_Dx12>("Output Scaling", InDevice, (TargetWidth() < DisplayWidth()));
         RCAS = std::make_unique<RCAS_Dx12>("RCAS", InDevice);
         Bias = std::make_unique<Bias_Dx12>("Bias", InDevice);
+        DenoiserTransfer = std::make_unique<DNT_Dx12>("Denoiser Transfer", InDevice);
 
         return true;
     }
@@ -152,7 +153,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     if (!OutputScaler->IsInit())
         Config::Instance()->OutputScalingEnabled.set_volatile_value(false);
 
-    if (_denoiserContext == nullptr)
+    if (_denoiserContext == nullptr || !DenoiserTransfer->IsInit())
     {
         LOG_ERROR("PANIC!");
         return false;
@@ -328,6 +329,11 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     ID3D12Resource* depth;
     InParameters->Get(NVSDK_NGX_Parameter_Depth, &depth); // TODO: this is wrong, it's likely not linear
 
+    if (depth)
+        DenoiserTransfer->CreateDepthResource(Device, depth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    else
+        LOG_ERROR("Depth missing!");
+
     ID3D12Resource* motionVectors;
     InParameters->Get(NVSDK_NGX_Parameter_MotionVectors, &motionVectors); // TODO: those MVs are only 2D, not 2.5D
 
@@ -347,11 +353,20 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     ID3D12Resource* diffuseAlbedo;
     InParameters->Get("DLSS.Input.DiffuseAlbedo", &diffuseAlbedo); // TODO: missing metalness
+
+    // Run the resource translation
+    DntConstants dntConstants;
+    dntConstants.cameraFar = cameraFar;
+    dntConstants.cameraNear = cameraNear;
+    dntConstants.depthNonLinear = depthNonLinear == 1;
+    //dntConstants.depthInverted = depthInverted;
+    DenoiserTransfer->Dispatch(Device, InCommandList, depth, dntConstants);
     
     // Final assembly
     denoiserParams.commandList = InCommandList;
 
-    denoiserParams.linearDepth = ffxApiGetResourceDX12(depth, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.linearDepth =
+        ffxApiGetResourceDX12(DenoiserTransfer->LinearDepth(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.motionVectors = ffxApiGetResourceDX12(motionVectors, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.normals = ffxApiGetResourceDX12(normals, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.specularAlbedo = ffxApiGetResourceDX12(specularAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
@@ -385,9 +400,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
 
 
-    CopyResource(InCommandList, middle, &output, D3D12_RESOURCE_STATE_COPY_SOURCE);
-    _frameCount++;
-    return true;
+    //CopyResource(InCommandList, middle, &output, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    //_frameCount++;
+    //return true;
 
 
 
@@ -435,7 +450,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     // Force enable RCAS when in FSR4 debug view mode
     // it crashes when sharpening is disabled
-    // Debug view expects RCAS output (now sure why)
+    // Debug view expects RCAS output (not sure why)
     if (Version() >= feature_version { 4, 0, 2 } && Config::Instance()->FsrDebugView.value_or_default() &&
         Config::Instance()->Fsr4EnableDebugView.value_or_default() && !upscaleParams.enableSharpening)
     {
@@ -458,8 +473,10 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     upscaleParams.commandList = InCommandList;
 
     ID3D12Resource* paramColor;
-    if (InParameters->Get(NVSDK_NGX_Parameter_Color, &paramColor) != NVSDK_NGX_Result_Success)
-        InParameters->Get(NVSDK_NGX_Parameter_Color, (void**) &paramColor);
+    //if (InParameters->Get(NVSDK_NGX_Parameter_Color, &paramColor) != NVSDK_NGX_Result_Success)
+    //    InParameters->Get(NVSDK_NGX_Parameter_Color, (void**) &paramColor);
+
+    paramColor = middle;
 
     if (paramColor)
     {
@@ -719,36 +736,18 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     LOG_DEBUG("Sharpness: {0}", upscaleParams.sharpness);
 
-    if (!Config::Instance()->FsrUseFsrInputValues.value_or_default() ||
-        InParameters->Get("FSR.cameraNear", &upscaleParams.cameraNear) != NVSDK_NGX_Result_Success)
+    if (DepthInverted())
     {
-        if (DepthInverted())
-            upscaleParams.cameraFar = Config::Instance()->FsrCameraNear.value_or_default();
-        else
-            upscaleParams.cameraNear = Config::Instance()->FsrCameraNear.value_or_default();
+        upscaleParams.cameraFar = cameraFar;
+        upscaleParams.cameraNear = cameraNear;
+    }
+    else
+    {
+        upscaleParams.cameraFar = cameraNear;
+        upscaleParams.cameraNear = cameraFar;
     }
 
-    if (!Config::Instance()->FsrUseFsrInputValues.value_or_default() ||
-        InParameters->Get("FSR.cameraFar", &upscaleParams.cameraFar) != NVSDK_NGX_Result_Success)
-    {
-        if (DepthInverted())
-            upscaleParams.cameraNear = Config::Instance()->FsrCameraFar.value_or_default();
-        else
-            upscaleParams.cameraFar = Config::Instance()->FsrCameraFar.value_or_default();
-    }
-
-    if (!Config::Instance()->FsrUseFsrInputValues.value_or_default() ||
-        InParameters->Get("FSR.cameraFovAngleVertical", &upscaleParams.cameraFovAngleVertical) != NVSDK_NGX_Result_Success)
-    {
-        if (Config::Instance()->FsrVerticalFov.has_value())
-            upscaleParams.cameraFovAngleVertical = Config::Instance()->FsrVerticalFov.value() * 0.0174532925199433f;
-        else if (Config::Instance()->FsrHorizontalFov.value_or_default() > 0.0f)
-            upscaleParams.cameraFovAngleVertical =
-                2.0f * atan((tan(Config::Instance()->FsrHorizontalFov.value() * 0.0174532925199433f) * 0.5f) /
-                            (float) TargetHeight() * (float) TargetWidth());
-        else
-            upscaleParams.cameraFovAngleVertical = 1.0471975511966f;
-    }
+    upscaleParams.cameraFovAngleVertical = cameraFovAngleVertical;
 
     if (!Config::Instance()->FsrUseFsrInputValues.value_or_default() ||
         InParameters->Get("FSR.frameTimeDelta", &upscaleParams.frameTimeDelta) != NVSDK_NGX_Result_Success)

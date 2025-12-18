@@ -101,7 +101,11 @@ bool Shader_Dx12::CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* I
         return false;
     }
 
-    inDesc.Flags |= ResourceFlags;
+    if (inDesc.Flags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL)
+        inDesc.Flags = ResourceFlags;
+    else
+        inDesc.Flags |= ResourceFlags;
+
     if (InFormat != DXGI_FORMAT_UNKNOWN)
         inDesc.Format = InFormat;
 
