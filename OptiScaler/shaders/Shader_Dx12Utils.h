@@ -119,10 +119,16 @@ class FrameDescriptorHeap
     void ReleaseHeaps()
     {
         if (heapCSU)
+        {
             heapCSU->Release();
+            heapCSU = nullptr;
+        }
 
         if (heapRtv)
+        {
             heapRtv->Release();
+            heapRtv = nullptr;
+        }
     }
 
     ~FrameDescriptorHeap() { ReleaseHeaps(); }

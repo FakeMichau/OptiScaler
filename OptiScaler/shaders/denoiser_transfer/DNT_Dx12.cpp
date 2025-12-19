@@ -25,7 +25,9 @@ void DNT_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCo
     return Shader_Dx12::SetBufferState(InCommandList, InState, rawResource, &state);
 }
 
-bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth, DntConstants InConstants)
+bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth,
+                        ID3D12Resource* InNormals, ID3D12Resource* InRoughness,
+                        DntConstants InConstants)
 {
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InDepth == nullptr || linearDepth.rawResource == nullptr)
         return false;
@@ -39,30 +41,74 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     auto inDepthDesc = InDepth->GetDesc();
     auto outDepthDesc = linearDepth.rawResource->GetDesc();
 
-    // Create SRV for Input Texture
-    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    srvDesc.Format = Shader_Dx12::TranslateTypelessFormats(inDepthDesc.Format);
-    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    srvDesc.Texture2D.MipLevels = 1;
+    auto inNormalsDesc = InNormals->GetDesc();
+    auto outNormalsDesc = normals.rawResource->GetDesc();
 
-    InDevice->CreateShaderResourceView(InDepth, &srvDesc, currentHeap.GetSrvCPU(0));
+    // Depth
+    D3D12_SHADER_RESOURCE_VIEW_DESC depthDesc = {};
+    depthDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    depthDesc.Format = Shader_Dx12::TranslateTypelessFormats(inDepthDesc.Format);
+    depthDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    depthDesc.Texture2D.MipLevels = 1;
 
-    // Create UAV for Output Texture
-    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-    uavDesc.Format = Shader_Dx12::TranslateTypelessFormats(outDepthDesc.Format);
-    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-    uavDesc.Texture2D.MipSlice = 0;
+    InDevice->CreateShaderResourceView(InDepth, &depthDesc, currentHeap.GetSrvCPU(0));
 
-    InDevice->CreateUnorderedAccessView(linearDepth.rawResource, nullptr, &uavDesc, currentHeap.GetUavCPU(0));
+    // Normals
+    D3D12_SHADER_RESOURCE_VIEW_DESC normalsDesc = {};
+    normalsDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    normalsDesc.Format = Shader_Dx12::TranslateTypelessFormats(inNormalsDesc.Format);
+    normalsDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    normalsDesc.Texture2D.MipLevels = 1;
+
+    InDevice->CreateShaderResourceView(InNormals, &normalsDesc, currentHeap.GetSrvCPU(1));
+
+    // Roughness (optional if packed into Normals)
+    if (!InConstants.roughnessInNormals)
+    {
+        auto inRoughnessDesc = InRoughness->GetDesc();
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC roughnessDesc = {};
+        roughnessDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        roughnessDesc.Format = Shader_Dx12::TranslateTypelessFormats(inRoughnessDesc.Format);
+        roughnessDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        roughnessDesc.Texture2D.MipLevels = 1;
+
+        InDevice->CreateShaderResourceView(InRoughness, &roughnessDesc, currentHeap.GetSrvCPU(2));
+    }
+    else
+    {
+        // Put normals into shader as roughness as dummy data
+        InDevice->CreateShaderResourceView(InNormals, &normalsDesc, currentHeap.GetSrvCPU(2));
+    }
+
+    /// Outputs
+
+    // Linear Depth
+    D3D12_UNORDERED_ACCESS_VIEW_DESC outLinearDepthDesc = {};
+    outLinearDepthDesc.Format = Shader_Dx12::TranslateTypelessFormats(outDepthDesc.Format);
+    outLinearDepthDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    outLinearDepthDesc.Texture2D.MipSlice = 0;
+
+    InDevice->CreateUnorderedAccessView(linearDepth.rawResource, nullptr, &outLinearDepthDesc,
+                                        currentHeap.GetUavCPU(0));
+
+    // Packed Normals
+    D3D12_UNORDERED_ACCESS_VIEW_DESC outPackedNormalsDesc = {};
+    outPackedNormalsDesc.Format = Shader_Dx12::TranslateTypelessFormats(outNormalsDesc.Format);
+    outPackedNormalsDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    outPackedNormalsDesc.Texture2D.MipSlice = 0;
+
+    InDevice->CreateUnorderedAccessView(normals.rawResource, nullptr, &outPackedNormalsDesc,
+                                        currentHeap.GetUavCPU(1));
 
     InternalConstants constants {};
 
     constants.depthNonLinear = InConstants.depthNonLinear;
+    constants.depthInverted = InConstants.depthInverted;
     constants.cameraFar = InConstants.cameraFar;
     constants.cameraNear = InConstants.cameraNear;
-    
-    // TODO: if depth is linear then don't pass to shader??? or skip math in the shader
+
+    constants.roughnessInNormals = InConstants.roughnessInNormals;
 
     // Copy the updated constant buffer data to the constant buffer resource
     BYTE* pCBDataBegin;
@@ -121,10 +167,10 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
 
     CD3DX12_DESCRIPTOR_RANGE1 descriptorRanges[] = {
         // 1 SRV starting at register t0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0),
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0, 0),
 
         // 1 UAV starting at register u0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0),
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 0),
 
         // 1 CBV starting at register b0, space 0
         CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0)
@@ -236,7 +282,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
 
     for (int i = 0; i < DNT_NUM_OF_HEAPS; i++)
     {
-        if (!_frameHeaps[i].Initialize(InDevice, 1, 1, 1))
+        if (!_frameHeaps[i].Initialize(InDevice, 3, 2, 1))
         {
             LOG_ERROR("[{0}] Failed to init heap", _name);
             _init = false;

@@ -9,6 +9,8 @@ struct DntConstants
     int depthInverted = false;
     float cameraFar = 0.0f;
     float cameraNear = 0.0f;
+
+    int roughnessInNormals;
 };
 
 static std::string dntCode = R"(
@@ -18,24 +20,58 @@ cbuffer Params : register(b0)
     int depthInverted;
     float cameraFar;
     float cameraNear;
+    
+    int roughnessInNormals;
 };
 
 Texture2D<float> DepthInput : register(t0);
+Texture2D<float4> NormalsInput : register(t1);
+Texture2D<float> RoughnessInput : register(t2);
 RWTexture2D<float> LinearDepthOutput : register(u0);
+RWTexture2D<float4> PackedNormalsOutput : register(u1);
+
+float2 NormalToOctahedronUv(float3 N)
+{
+    N.xy /= abs(N.x) + abs(N.y) + abs(N.z);
+    float2 k = sign(N.xy);
+    float s = saturate(-N.z);
+    N.xy = lerp(N.xy, (1.0 - abs(N.yx)) * k, s);
+    return N.xy * 0.5 + 0.5;
+}
+
+float DepthToLinear(float depth)
+{
+    if (depthNonLinear == 0)
+        return depth;
+    
+    float range = cameraFar - cameraNear;
+
+    float linearDepth;
+    if (depthInverted)
+        linearDepth = (cameraNear * cameraFar) / (cameraNear + depth * range);
+    else
+        linearDepth = (cameraNear * cameraFar) / (cameraFar - depth * range);
+    
+    return saturate((linearDepth - cameraNear) / range);
+}
 
 [numthreads(32, 32, 1)]
 void CSMain(uint3 DTid : SV_DispatchThreadID)
 {
     float depth = DepthInput.Load(int3(DTid.xy, 0)).x;
+    LinearDepthOutput[DTid.xy] = DepthToLinear(depth);
     
-    float linearDepth = 0.0f;
     
-    if (depthInverted > 0)
-        linearDepth = (cameraNear * cameraFar) / (cameraFar - depth * (cameraFar - cameraNear));
+    float4 normals = NormalsInput.Load(int3(DTid.xy, 0));
+    
+    float roughness;
+    if (roughnessInNormals > 0)
+        roughness = normals.a;
     else
-        linearDepth = (cameraNear * cameraFar) / (cameraNear + depth * (cameraFar - cameraNear));
+        roughness = RoughnessInput.Load(int3(DTid.xy, 0));
     
-    LinearDepthOutput[DTid.xy] = (linearDepth - cameraNear) / (cameraFar - cameraNear);
+    // Material as 0
+    PackedNormalsOutput[DTid.xy] = float4(NormalToOctahedronUv(normals.rgb), roughness, 0);
 }
 )";
 

@@ -327,7 +327,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         LOG_ERROR("Can't get camera position");
 
     ID3D12Resource* depth;
-    InParameters->Get(NVSDK_NGX_Parameter_Depth, &depth); // TODO: this is wrong, it's likely not linear
+    InParameters->Get(NVSDK_NGX_Parameter_Depth, &depth);
 
     if (depth)
         DenoiserTransfer->CreateDepthResource(Device, depth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -340,13 +340,17 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     int roughnessInNormals = 0;
     InParameters->Get("DLSS.Roughness.Mode", &roughnessInNormals);
 
-    ID3D12Resource* roughness;
+    ID3D12Resource* roughness = nullptr;
     if (roughnessInNormals == 0) {
         InParameters->Get(NVSDK_NGX_Parameter_GBuffer_Roughness, &roughness);
     }
 
     ID3D12Resource* normals;
-    InParameters->Get(NVSDK_NGX_Parameter_GBuffer_Normals, &normals); // TODO: if GBuffer_Roughness is null then this might contain roughness, those are float3 normals, need float2
+    InParameters->Get(NVSDK_NGX_Parameter_GBuffer_Normals, &normals);
+    if (normals)
+        DenoiserTransfer->CreateNormalsResource(Device, normals, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    else
+        LOG_ERROR("Normals missing!");
 
     ID3D12Resource* specularAlbedo;
     InParameters->Get("DLSS.Input.SpecularAlbedo", &specularAlbedo); // TODO: add NoV (the saturated dot product of the view vector and surface normal) to alpha
@@ -359,8 +363,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     dntConstants.cameraFar = cameraFar;
     dntConstants.cameraNear = cameraNear;
     dntConstants.depthNonLinear = depthNonLinear == 1;
-    //dntConstants.depthInverted = depthInverted;
-    DenoiserTransfer->Dispatch(Device, InCommandList, depth, dntConstants);
+    dntConstants.depthInverted = depthInverted;
+    dntConstants.roughnessInNormals = roughnessInNormals;
+    DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, dntConstants);
     
     // Final assembly
     denoiserParams.commandList = InCommandList;
@@ -368,7 +373,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     denoiserParams.linearDepth =
         ffxApiGetResourceDX12(DenoiserTransfer->LinearDepth(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.motionVectors = ffxApiGetResourceDX12(motionVectors, FFX_API_RESOURCE_STATE_COMPUTE_READ);
-    denoiserParams.normals = ffxApiGetResourceDX12(normals, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.normals =
+        ffxApiGetResourceDX12(DenoiserTransfer->Normals(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.specularAlbedo = ffxApiGetResourceDX12(specularAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.diffuseAlbedo = ffxApiGetResourceDX12(diffuseAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
 
@@ -755,7 +761,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         if (InParameters->Get(NVSDK_NGX_Parameter_FrameTimeDeltaInMsec, &upscaleParams.frameTimeDelta) !=
                 NVSDK_NGX_Result_Success ||
             upscaleParams.frameTimeDelta < 1.0f)
-            upscaleParams.frameTimeDelta = (float) GetDeltaTime();
+            upscaleParams.frameTimeDelta = denoiserParams.deltaTime;
     }
 
     LOG_DEBUG("FrameTimeDeltaInMsec: {0}", upscaleParams.frameTimeDelta);
