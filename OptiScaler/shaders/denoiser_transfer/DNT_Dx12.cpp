@@ -156,6 +156,8 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     constants.depthInverted = InConstants.depthInverted;
     constants.cameraFar = InConstants.cameraFar;
     constants.cameraNear = InConstants.cameraNear;
+    memcpy(constants.inverseViewToClipMatrix, InConstants.inverseViewToClipMatrix,
+           sizeof(constants.inverseViewToClipMatrix));
 
     constants.roughnessInNormals = InConstants.roughnessInNormals;
 

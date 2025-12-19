@@ -30,6 +30,7 @@ class DNT_Dx12 : public Shader_Dx12
         int depthInverted;
         float cameraFar;
         float cameraNear;
+        float inverseViewToClipMatrix[4][4];
 
         int roughnessInNormals;
     };

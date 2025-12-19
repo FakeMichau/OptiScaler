@@ -182,9 +182,6 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     ffxDispatchDescDenoiserInput1Signal denoiserInputs = {};
     denoiserInputs.header.type = FFX_API_DISPATCH_DESC_INPUT_1_SIGNAL_TYPE_DENOISER;
 
-    ID3D12Resource* fusedAlbedo;
-    InParameters->Get("DLSS.Input.DiffuseAlbedo", &fusedAlbedo); // TODO: this is wrong, need to combine albedos
-
     FfxApiDenoiserSignal signals;
     ID3D12Resource* color {};
     static ID3D12Resource* middle {};
@@ -202,6 +199,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         _frameCount++;
         return true;
     }
+
+    DntConstants dntConstants;
 
     // Params struct
     ffxDispatchDescDenoiser denoiserParams {};
@@ -230,6 +229,12 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
         float projMatrix[4][4];
         memcpy(projMatrix, cameraViewToClip, sizeof(projMatrix));
+
+        XMMATRIX viewToClip;
+        memcpy(&viewToClip, cameraViewToClip, sizeof(viewToClip));
+
+        const XMMATRIX inverseViewToClip = XMMatrixInverse(nullptr, viewToClip);
+        memcpy(dntConstants.inverseViewToClipMatrix, &inverseViewToClip, sizeof(dntConstants.inverseViewToClipMatrix));
 
         // BUG: Various RTX Remix-based games pass in an identity matrix which is completely useless. No
         // idea why.
@@ -361,9 +366,16 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         LOG_ERROR("Diffuse Albedo missing!");
 
     // TODO: add specular ray length
+    ID3D12Resource* specularHitDistance;
+    InParameters->Get("DLSSD.SpecularHitDistance", &specularHitDistance);
+    //if (specularHitDistance)
+    //    DenoiserTransfer->CreateDiffuseAlbedoResource(Device, specularHitDistance,
+    //                                                  D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    //else
+    //    LOG_ERROR("Diffuse Albedo missing!");
 
     // Run the resource translation
-    DntConstants dntConstants;
+    
     dntConstants.cameraFar = cameraFar;
     dntConstants.cameraNear = cameraNear;
     dntConstants.depthNonLinear = depthNonLinear == 1;
@@ -1032,9 +1044,9 @@ bool FSRDFeatureDx12::InitFSRD(const NVSDK_NGX_Parameter* InParameters)
     _upscaleContextDesc.flags = 0;
 
 #ifdef _DEBUG
-    LOG_INFO("Debug checking enabled for upscaling!");
-    _upscaleContextDesc.fpMessage = FfxdLogCallback;
-    _upscaleContextDesc.flags |= FFX_UPSCALE_ENABLE_DEBUG_CHECKING;
+    //LOG_INFO("Debug checking enabled for upscaling!");
+    //_upscaleContextDesc.fpMessage = FfxdLogCallback;
+    //_upscaleContextDesc.flags |= FFX_UPSCALE_ENABLE_DEBUG_CHECKING;
 #endif
 
     if (DepthInverted())

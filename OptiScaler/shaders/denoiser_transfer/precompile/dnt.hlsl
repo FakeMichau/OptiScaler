@@ -4,7 +4,8 @@ cbuffer Params : register(b0)
     int depthInverted;
     float cameraFar;
     float cameraNear;
-    
+    float4x4 inverseViewToClipMatrix;
+       
     int roughnessInNormals;
 };
 
@@ -48,6 +49,28 @@ float DepthToLinear(float depth)
     return saturate((linearDepth - cameraNear) / range);
 }
 
+float GetNoV(int2 pixelPos, float depth, float3 normals)
+{
+    // TODO: assumes Normals are already in view space
+    float3 N = normalize(normals * 2.0f - 1.0f);
+    
+    float screenWidth, screenHeight;
+    DepthInput.GetDimensions(screenWidth, screenHeight);
+    
+    float2 uv = (pixelPos + 0.5f) / float2(screenWidth, screenHeight);
+    float2 ndc;
+    ndc.x = uv.x * 2.0f - 1.0f;
+    ndc.y = 1.0f - uv.y * 2.0f; // flip Y if needed
+    
+    float4 clipPos = float4(ndc, depth, 1.0f);
+    float4 viewPos = mul(inverseViewToClipMatrix, clipPos);
+    viewPos.xyz /= viewPos.w;
+    
+    float3 V = normalize(-viewPos.xyz);
+    
+    return saturate(dot(N, V));
+}
+
 [numthreads(32, 32, 1)]
 void CSMain(uint3 DTid : SV_DispatchThreadID)
 {
@@ -68,8 +91,10 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     float3 specularAlbedo = SpecularAlbedoInput.Load(int3(DTid.xy, 0));
     float3 diffuseAlbedo = DiffuseAlbedoInput.Load(int3(DTid.xy, 0));
     
-    // TODO: NoV as 0
-    SpecularAlbedoOutput[DTid.xy] = float4(specularAlbedo, 0); // metalness as 0
-    DiffuseAlbedoOutput[DTid.xy] = float4(diffuseAlbedo, 0);
-    FusedAlbedoOutput[DTid.xy] = float4(max(specularAlbedo, diffuseAlbedo), 0);
+    // TODO: if depth is linear then this doesn't work
+    float NoV = GetNoV(DTid.xy, depth, normals.xyz);
+    
+    SpecularAlbedoOutput[DTid.xy] = float4(specularAlbedo, NoV);
+    DiffuseAlbedoOutput[DTid.xy] = float4(diffuseAlbedo, 0); // metalness as 0
+    FusedAlbedoOutput[DTid.xy] = float4(max(specularAlbedo, diffuseAlbedo), NoV);
 }
