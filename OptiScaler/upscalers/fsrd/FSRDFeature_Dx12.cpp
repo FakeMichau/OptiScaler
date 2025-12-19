@@ -203,12 +203,6 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         return true;
     }
 
-    signals.input = ffxApiGetResourceDX12(color, FFX_API_RESOURCE_STATE_COMPUTE_READ);
-    signals.output = ffxApiGetResourceDX12(middle, FFX_API_RESOURCE_STATE_COMPUTE_READ);
-
-    denoiserInputs.fusedAlbedo = ffxApiGetResourceDX12(fusedAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
-    denoiserInputs.radiance = signals;
-
     // Params struct
     ffxDispatchDescDenoiser denoiserParams {};
     denoiserParams.header.type = FFX_API_DISPATCH_DESC_TYPE_DENOISER;
@@ -354,9 +348,19 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     ID3D12Resource* specularAlbedo;
     InParameters->Get("DLSS.Input.SpecularAlbedo", &specularAlbedo); // TODO: add NoV (the saturated dot product of the view vector and surface normal) to alpha
+    if (specularAlbedo)
+        DenoiserTransfer->CreateSpecularAlbedoResource(Device, specularAlbedo, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    else
+        LOG_ERROR("Specular Albedo missing!");
 
     ID3D12Resource* diffuseAlbedo;
     InParameters->Get("DLSS.Input.DiffuseAlbedo", &diffuseAlbedo); // TODO: missing metalness
+    if (diffuseAlbedo)
+        DenoiserTransfer->CreateDiffuseAlbedoResource(Device, diffuseAlbedo, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    else
+        LOG_ERROR("Diffuse Albedo missing!");
+
+    // TODO: add specular ray length
 
     // Run the resource translation
     DntConstants dntConstants;
@@ -365,9 +369,17 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     dntConstants.depthNonLinear = depthNonLinear == 1;
     dntConstants.depthInverted = depthInverted;
     dntConstants.roughnessInNormals = roughnessInNormals;
-    DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, dntConstants);
+    DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo,
+                               diffuseAlbedo, dntConstants);
     
     // Final assembly
+    signals.input = ffxApiGetResourceDX12(color, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    signals.output = ffxApiGetResourceDX12(middle, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+
+    denoiserInputs.fusedAlbedo =
+        ffxApiGetResourceDX12(DenoiserTransfer->FusedAlbedo(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserInputs.radiance = signals;
+
     denoiserParams.commandList = InCommandList;
 
     denoiserParams.linearDepth =
@@ -375,8 +387,10 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     denoiserParams.motionVectors = ffxApiGetResourceDX12(motionVectors, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.normals =
         ffxApiGetResourceDX12(DenoiserTransfer->Normals(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
-    denoiserParams.specularAlbedo = ffxApiGetResourceDX12(specularAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
-    denoiserParams.diffuseAlbedo = ffxApiGetResourceDX12(diffuseAlbedo, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.specularAlbedo =
+        ffxApiGetResourceDX12(DenoiserTransfer->SpecularAlbedo(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.diffuseAlbedo =
+        ffxApiGetResourceDX12(DenoiserTransfer->DiffuseAlbedo(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
 
     InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
     InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);

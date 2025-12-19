@@ -26,7 +26,8 @@ void DNT_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCo
 }
 
 bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth,
-                        ID3D12Resource* InNormals, ID3D12Resource* InRoughness,
+                        ID3D12Resource* InNormals, ID3D12Resource* InRoughness, ID3D12Resource* InSpecularAlbedo,
+                        ID3D12Resource* InDiffuseAlbedo,
                         DntConstants InConstants)
 {
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InDepth == nullptr || linearDepth.rawResource == nullptr)
@@ -38,13 +39,8 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     _counter = _counter % DNT_NUM_OF_HEAPS;
     FrameDescriptorHeap& currentHeap = _frameHeaps[_counter];
 
-    auto inDepthDesc = InDepth->GetDesc();
-    auto outDepthDesc = linearDepth.rawResource->GetDesc();
-
-    auto inNormalsDesc = InNormals->GetDesc();
-    auto outNormalsDesc = normals.rawResource->GetDesc();
-
     // Depth
+    auto inDepthDesc = InDepth->GetDesc();
     D3D12_SHADER_RESOURCE_VIEW_DESC depthDesc = {};
     depthDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     depthDesc.Format = Shader_Dx12::TranslateTypelessFormats(inDepthDesc.Format);
@@ -54,6 +50,7 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     InDevice->CreateShaderResourceView(InDepth, &depthDesc, currentHeap.GetSrvCPU(0));
 
     // Normals
+    auto inNormalsDesc = InNormals->GetDesc();
     D3D12_SHADER_RESOURCE_VIEW_DESC normalsDesc = {};
     normalsDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     normalsDesc.Format = Shader_Dx12::TranslateTypelessFormats(inNormalsDesc.Format);
@@ -81,9 +78,30 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
         InDevice->CreateShaderResourceView(InNormals, &normalsDesc, currentHeap.GetSrvCPU(2));
     }
 
+    // Specular Albedo
+    auto inSpecularAlbedoDesc = InSpecularAlbedo->GetDesc();
+    D3D12_SHADER_RESOURCE_VIEW_DESC specularAlbedoDesc = {};
+    specularAlbedoDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    specularAlbedoDesc.Format = Shader_Dx12::TranslateTypelessFormats(inSpecularAlbedoDesc.Format);
+    specularAlbedoDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    specularAlbedoDesc.Texture2D.MipLevels = 1;
+
+    InDevice->CreateShaderResourceView(InSpecularAlbedo, &specularAlbedoDesc, currentHeap.GetSrvCPU(3));
+
+    // Diffuse Albedo
+    auto inDiffuseAlbedoDesc = InDiffuseAlbedo->GetDesc();
+    D3D12_SHADER_RESOURCE_VIEW_DESC diffuseAlbedoDesc = {};
+    diffuseAlbedoDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    diffuseAlbedoDesc.Format = Shader_Dx12::TranslateTypelessFormats(inDiffuseAlbedoDesc.Format);
+    diffuseAlbedoDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    diffuseAlbedoDesc.Texture2D.MipLevels = 1;
+
+    InDevice->CreateShaderResourceView(InDiffuseAlbedo, &diffuseAlbedoDesc, currentHeap.GetSrvCPU(4));
+
     /// Outputs
 
     // Linear Depth
+    auto outDepthDesc = linearDepth.rawResource->GetDesc();
     D3D12_UNORDERED_ACCESS_VIEW_DESC outLinearDepthDesc = {};
     outLinearDepthDesc.Format = Shader_Dx12::TranslateTypelessFormats(outDepthDesc.Format);
     outLinearDepthDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
@@ -93,6 +111,7 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
                                         currentHeap.GetUavCPU(0));
 
     // Packed Normals
+    auto outNormalsDesc = normals.rawResource->GetDesc();
     D3D12_UNORDERED_ACCESS_VIEW_DESC outPackedNormalsDesc = {};
     outPackedNormalsDesc.Format = Shader_Dx12::TranslateTypelessFormats(outNormalsDesc.Format);
     outPackedNormalsDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
@@ -100,6 +119,36 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
 
     InDevice->CreateUnorderedAccessView(normals.rawResource, nullptr, &outPackedNormalsDesc,
                                         currentHeap.GetUavCPU(1));
+
+    // Specular Albedo
+    auto outSpecularAlbedoDesc = specularAlbedo.rawResource->GetDesc();
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavSpecularAlbedoDesc = {};
+    uavSpecularAlbedoDesc.Format = Shader_Dx12::TranslateTypelessFormats(outSpecularAlbedoDesc.Format);
+    uavSpecularAlbedoDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavSpecularAlbedoDesc.Texture2D.MipSlice = 0;
+
+    InDevice->CreateUnorderedAccessView(specularAlbedo.rawResource, nullptr, &uavSpecularAlbedoDesc,
+                                        currentHeap.GetUavCPU(2));
+
+    // Diffuse Albedo
+    auto outDiffuseAlbedoDesc = diffuseAlbedo.rawResource->GetDesc();
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDiffuseAlbedoDesc = {};
+    uavDiffuseAlbedoDesc.Format = Shader_Dx12::TranslateTypelessFormats(outDiffuseAlbedoDesc.Format);
+    uavDiffuseAlbedoDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavDiffuseAlbedoDesc.Texture2D.MipSlice = 0;
+
+    InDevice->CreateUnorderedAccessView(diffuseAlbedo.rawResource, nullptr, &uavDiffuseAlbedoDesc,
+                                        currentHeap.GetUavCPU(3));
+
+    // Fused Albedo
+    auto outFusedAlbedoDesc = fusedAlbedo.rawResource->GetDesc();
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavFusedAlbedoDesc = {};
+    uavFusedAlbedoDesc.Format = Shader_Dx12::TranslateTypelessFormats(outFusedAlbedoDesc.Format);
+    uavFusedAlbedoDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavFusedAlbedoDesc.Texture2D.MipSlice = 0;
+
+    InDevice->CreateUnorderedAccessView(fusedAlbedo.rawResource, nullptr, &uavFusedAlbedoDesc,
+                                        currentHeap.GetUavCPU(4));
 
     InternalConstants constants {};
 
@@ -166,11 +215,11 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
     LOG_DEBUG("{0} start!", _name);
 
     CD3DX12_DESCRIPTOR_RANGE1 descriptorRanges[] = {
-        // 1 SRV starting at register t0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0, 0),
+        // 5 SRVs starting at register t0, space 0
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0, 0),
 
-        // 1 UAV starting at register u0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 0),
+        // 5 UAVs starting at register u0, space 0
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 5, 0, 0),
 
         // 1 CBV starting at register b0, space 0
         CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0)
@@ -282,7 +331,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
 
     for (int i = 0; i < DNT_NUM_OF_HEAPS; i++)
     {
-        if (!_frameHeaps[i].Initialize(InDevice, 3, 2, 1))
+        if (!_frameHeaps[i].Initialize(InDevice, 5, 5, 1))
         {
             LOG_ERROR("[{0}] Failed to init heap", _name);
             _init = false;
