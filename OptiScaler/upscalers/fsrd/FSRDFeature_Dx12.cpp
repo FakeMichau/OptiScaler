@@ -200,6 +200,11 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         return true;
     }
 
+    if (color)
+        DenoiserTransfer->CreateColorResource(Device, color, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    else
+        LOG_ERROR("Color missing!");
+
     DntConstants dntConstants;
 
     // Params struct
@@ -219,6 +224,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     float cameraFovAngleVertical = 0.0f;
     float cameraAspectRatio = 0.0f;
 
+    XMMATRIX viewToClip;
     auto loadCameraMatrix = [&]()
     {
         float(*cameraViewToClip)[4] = nullptr;
@@ -229,12 +235,10 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
         float projMatrix[4][4];
         memcpy(projMatrix, cameraViewToClip, sizeof(projMatrix));
-
-        XMMATRIX viewToClip;
         memcpy(&viewToClip, cameraViewToClip, sizeof(viewToClip));
 
         const XMMATRIX inverseViewToClip = XMMatrixInverse(nullptr, viewToClip);
-        memcpy(dntConstants.inverseViewToClipMatrix, &inverseViewToClip, sizeof(dntConstants.inverseViewToClipMatrix));
+        memcpy(dntConstants.InvProjectionMatrix, &inverseViewToClip, sizeof(dntConstants.InvProjectionMatrix));
 
         // BUG: Various RTX Remix-based games pass in an identity matrix which is completely useless. No
         // idea why.
@@ -296,18 +300,18 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     FfxApiFloatCoords3D cameraPosition; // (PrevPos - CurrentPos)
 
+    XMMATRIX worldToCamera;
     auto loadCameraPosition = [&]()
     {
-        float(*cameraWorldToView)[4] = nullptr;
-        InParameters->Get("WorldToViewMatrix", reinterpret_cast<void**>(&cameraWorldToView));
+        float(*worldToCameraView)[4] = nullptr;
+        InParameters->Get("WorldToViewMatrix", reinterpret_cast<void**>(&worldToCameraView));
 
-        if (!cameraWorldToView)
+        if (!worldToCameraView)
             return false;
 
-        XMMATRIX worldToView;
-        memcpy(&worldToView, cameraWorldToView, sizeof(worldToView));
+        memcpy(&worldToCamera, worldToCameraView, sizeof(worldToCamera));
 
-        const XMMATRIX viewToWorld = XMMatrixInverse(nullptr, worldToView);
+        const XMMATRIX viewToWorld = XMMatrixInverse(nullptr, worldToCamera);
 
         const auto position = viewToWorld.r[3];
         const auto right = viewToWorld.r[0];
@@ -365,14 +369,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     else
         LOG_ERROR("Diffuse Albedo missing!");
 
-    // TODO: add specular ray length
+    // TODO: if a game only provides Specular Motion Vector Reflections then we are cooked
     ID3D12Resource* specularHitDistance;
     InParameters->Get("DLSSD.SpecularHitDistance", &specularHitDistance);
-    //if (specularHitDistance)
-    //    DenoiserTransfer->CreateDiffuseAlbedoResource(Device, specularHitDistance,
-    //                                                  D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    //else
-    //    LOG_ERROR("Diffuse Albedo missing!");
 
     // Run the resource translation
     
@@ -381,11 +380,11 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     dntConstants.depthNonLinear = depthNonLinear == 1;
     dntConstants.depthInverted = depthInverted;
     dntConstants.roughnessInNormals = roughnessInNormals;
-    DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo,
-                               diffuseAlbedo, dntConstants);
-    
+    DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo, diffuseAlbedo,
+                               motionVectors, specularHitDistance, color, dntConstants);
+  
     // Final assembly
-    signals.input = ffxApiGetResourceDX12(color, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    signals.input = ffxApiGetResourceDX12(DenoiserTransfer->Color(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     signals.output = ffxApiGetResourceDX12(middle, FFX_API_RESOURCE_STATE_COMPUTE_READ);
 
     denoiserInputs.fusedAlbedo =
@@ -396,7 +395,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     denoiserParams.linearDepth =
         ffxApiGetResourceDX12(DenoiserTransfer->LinearDepth(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
-    denoiserParams.motionVectors = ffxApiGetResourceDX12(motionVectors, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.motionVectors =
+        ffxApiGetResourceDX12(motionVectors, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.normals =
         ffxApiGetResourceDX12(DenoiserTransfer->Normals(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.specularAlbedo =

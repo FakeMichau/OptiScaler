@@ -8,6 +8,7 @@
 #include <d3dx/d3dx12.h>
 #include <shaders/Shader_Dx12Utils.h>
 #include <shaders/Shader_Dx12.h>
+#include <magic_enum.hpp>
 
 #define DNT_NUM_OF_HEAPS 2
 #define D3D12_INVALID_STATE (D3D12_RESOURCE_STATES) 0xFFFFFFFF
@@ -30,7 +31,7 @@ class DNT_Dx12 : public Shader_Dx12
         int depthInverted;
         float cameraFar;
         float cameraNear;
-        float inverseViewToClipMatrix[4][4];
+        float InvProjectionMatrix[4][4];
 
         int roughnessInNormals;
     };
@@ -43,6 +44,8 @@ class DNT_Dx12 : public Shader_Dx12
     DNT_Dx12::ResourceWithState specularAlbedo {};
     DNT_Dx12::ResourceWithState diffuseAlbedo {};
     DNT_Dx12::ResourceWithState fusedAlbedo {};
+    DNT_Dx12::ResourceWithState color {};
+    DNT_Dx12::ResourceWithState specularRayLength {};
 
     uint32_t InNumThreadsX = 32;
     uint32_t InNumThreadsY = 32;
@@ -50,7 +53,8 @@ class DNT_Dx12 : public Shader_Dx12
   public:
     bool Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth,
                   ID3D12Resource* InNormals, ID3D12Resource* InRoughness, ID3D12Resource* InSpecularAlbedo,
-                  ID3D12Resource* InDiffuseAlbedo, DntConstants InConstants);
+                  ID3D12Resource* InDiffuseAlbedo, ID3D12Resource* InMotionVectors, ID3D12Resource* InSpecularRayLength,
+                  ID3D12Resource* InColor, DntConstants InConstants);
 
     // Depth
     bool CreateDepthResource(ID3D12Device* InDevice, ID3D12Resource* InDepth, D3D12_RESOURCE_STATES InState) 
@@ -155,12 +159,49 @@ class DNT_Dx12 : public Shader_Dx12
         return diffuseAlbedo.SetBufferState(InCommandList, InState);
     }
 
+    // Color
+    bool CreateColorResource(ID3D12Device* InDevice, ID3D12Resource* InColor, D3D12_RESOURCE_STATES InState)
+    {
+        auto resourceFlags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS |
+                             D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
+
+        // TODO: create a resource with an alpha channel if the original one doesn't have it
+        // might require some function to convert between non-alpha into alpha without losing precision.
+        // Might also need to worry about radiance.output's format
+
+        if (InColor)
+        {
+            auto desc = InColor->GetDesc();
+            auto format = desc.Format;
+            LOG_DEBUG("Color format: {}", magic_enum::enum_name(format));
+        }
+
+        auto result = Shader_Dx12::CreateBufferResource(InDevice, InColor, InState, &color.rawResource, resourceFlags);
+        //auto result = Shader_Dx12::CreateBufferResource(InDevice, InColor, InState, &color.rawResource,
+        //                                                resourceFlags, 0, 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
+
+        if (result && color.state == D3D12_INVALID_STATE)
+        {
+            color.rawResource->SetName(L"DNT_color");
+            color.state = InState;
+        }
+
+        return result;
+    }
+
+    void SetColorState(ID3D12GraphicsCommandList* InCommandList, D3D12_RESOURCE_STATES InState)
+    {
+        return color.SetBufferState(InCommandList, InState);
+    }
+
     ID3D12Resource* LinearDepth() { return linearDepth.rawResource; }
     ID3D12Resource* Normals() { return normals.rawResource; }
     ID3D12Resource* SpecularAlbedo() { return specularAlbedo.rawResource; }
     ID3D12Resource* DiffuseAlbedo() { return diffuseAlbedo.rawResource; }
     ID3D12Resource* FusedAlbedo() { return fusedAlbedo.rawResource; }
+    ID3D12Resource* Color() { return color.rawResource; }
 
+    // TODO: fix
     bool CanRender() const { return _init && linearDepth.rawResource != nullptr; }
 
     DNT_Dx12(std::string InName, ID3D12Device* InDevice);

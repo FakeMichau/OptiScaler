@@ -27,7 +27,8 @@ void DNT_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCo
 
 bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth,
                         ID3D12Resource* InNormals, ID3D12Resource* InRoughness, ID3D12Resource* InSpecularAlbedo,
-                        ID3D12Resource* InDiffuseAlbedo,
+                        ID3D12Resource* InDiffuseAlbedo, ID3D12Resource* InMotionVectors,
+                        ID3D12Resource* InSpecularRayLength, ID3D12Resource* InColor,
                         DntConstants InConstants)
 {
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InDepth == nullptr || linearDepth.rawResource == nullptr)
@@ -98,6 +99,26 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
 
     InDevice->CreateShaderResourceView(InDiffuseAlbedo, &diffuseAlbedoDesc, currentHeap.GetSrvCPU(4));
 
+    // Specular Ray Length
+    auto inSpecularRayLengthDesc = InSpecularRayLength->GetDesc();
+    D3D12_SHADER_RESOURCE_VIEW_DESC specularRayLengthDesc = {};
+    specularRayLengthDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    specularRayLengthDesc.Format = Shader_Dx12::TranslateTypelessFormats(inSpecularRayLengthDesc.Format);
+    specularRayLengthDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    specularRayLengthDesc.Texture2D.MipLevels = 1;
+
+    InDevice->CreateShaderResourceView(InSpecularRayLength, &specularRayLengthDesc, currentHeap.GetSrvCPU(5));
+
+    // Color
+    auto inColorDesc = InColor->GetDesc();
+    D3D12_SHADER_RESOURCE_VIEW_DESC colorDesc = {};
+    colorDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    colorDesc.Format = Shader_Dx12::TranslateTypelessFormats(inColorDesc.Format);
+    colorDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    colorDesc.Texture2D.MipLevels = 1;
+
+    InDevice->CreateShaderResourceView(InColor, &colorDesc, currentHeap.GetSrvCPU(6));
+
     /// Outputs
 
     // Linear Depth
@@ -150,14 +171,23 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     InDevice->CreateUnorderedAccessView(fusedAlbedo.rawResource, nullptr, &uavFusedAlbedoDesc,
                                         currentHeap.GetUavCPU(4));
 
+    // Color
+    auto outColorDesc = color.rawResource->GetDesc();
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavColorDesc = {};
+    uavColorDesc.Format = Shader_Dx12::TranslateTypelessFormats(outColorDesc.Format);
+    uavColorDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavColorDesc.Texture2D.MipSlice = 0;
+
+    InDevice->CreateUnorderedAccessView(color.rawResource, nullptr, &uavColorDesc,
+                                        currentHeap.GetUavCPU(5));
+
     InternalConstants constants {};
 
     constants.depthNonLinear = InConstants.depthNonLinear;
     constants.depthInverted = InConstants.depthInverted;
     constants.cameraFar = InConstants.cameraFar;
     constants.cameraNear = InConstants.cameraNear;
-    memcpy(constants.inverseViewToClipMatrix, InConstants.inverseViewToClipMatrix,
-           sizeof(constants.inverseViewToClipMatrix));
+    memcpy(constants.InvProjectionMatrix, InConstants.InvProjectionMatrix, sizeof(constants.InvProjectionMatrix));
 
     constants.roughnessInNormals = InConstants.roughnessInNormals;
 
@@ -217,11 +247,11 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
     LOG_DEBUG("{0} start!", _name);
 
     CD3DX12_DESCRIPTOR_RANGE1 descriptorRanges[] = {
-        // 5 SRVs starting at register t0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0, 0),
+        // 7 SRVs starting at register t0, space 0
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0, 0),
 
-        // 5 UAVs starting at register u0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 5, 0, 0),
+        // 6 UAVs starting at register u0, space 0
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 6, 0, 0),
 
         // 1 CBV starting at register b0, space 0
         CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0)
@@ -333,7 +363,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
 
     for (int i = 0; i < DNT_NUM_OF_HEAPS; i++)
     {
-        if (!_frameHeaps[i].Initialize(InDevice, 5, 5, 1))
+        if (!_frameHeaps[i].Initialize(InDevice, 7, 6, 1))
         {
             LOG_ERROR("[{0}] Failed to init heap", _name);
             _init = false;
