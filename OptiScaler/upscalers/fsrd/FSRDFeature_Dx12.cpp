@@ -170,7 +170,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     auto getDefaultSettingsResult = FfxApiProxy::D3D12_Query(&_denoiserContext, &denoiserDefaultSettings.header);
 
     // Adjust settings here
-    //denoiserSettings.maxRadiance = 255;
+    denoiserSettings.maxRadiance = 1.0f;
+    denoiserSettings.stabilityBias = 0.0f;
+    denoiserSettings.gaussianKernelRelaxation = 1.0f;
 
     ffxConfigureDescDenoiserSettings denoiserSettingsDesc = {};
     denoiserSettingsDesc.header.type = FFX_API_CONFIGURE_DESC_TYPE_DENOISER_SETTINGS;
@@ -224,32 +226,29 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     float cameraFovAngleVertical = 0.0f;
     float cameraAspectRatio = 0.0f;
 
-    XMMATRIX viewToClip;
+    XMMATRIX viewToClip {};
     auto loadCameraMatrix = [&]()
     {
-        float(*cameraViewToClip)[4] = nullptr;
-        InParameters->Get("ViewToClipMatrix", reinterpret_cast<void**>(&cameraViewToClip));
+        XMMATRIX* viewToClipPtr;
+        InParameters->Get("ViewToClipMatrix", reinterpret_cast<void**>(&viewToClipPtr));
 
-        if (!cameraViewToClip)
+        if (!viewToClipPtr)
             return false;
 
-        float projMatrix[4][4];
-        memcpy(projMatrix, cameraViewToClip, sizeof(projMatrix));
-        memcpy(&viewToClip, cameraViewToClip, sizeof(viewToClip));
+        viewToClip = *viewToClipPtr;
 
         const XMMATRIX inverseViewToClip = XMMatrixInverse(nullptr, viewToClip);
-        memcpy(dntConstants.InvProjectionMatrix, &inverseViewToClip, sizeof(dntConstants.InvProjectionMatrix));
+        memcpy(&dntConstants.InvProjection, &inverseViewToClip, sizeof(dntConstants.InvProjection));
 
         // BUG: Various RTX Remix-based games pass in an identity matrix which is completely useless. No
         // idea why.
         const bool isEmptyOrIdentityMatrix = [&]()
         {
-            float m[4][4] = {};
-            if (memcmp(projMatrix, m, sizeof(m)) == 0)
+            if (XMVector4Equal(viewToClip.r[0], XMVectorZero()) && XMVector4Equal(viewToClip.r[1], XMVectorZero()) &&
+                XMVector4Equal(viewToClip.r[2], XMVectorZero()) && XMVector4Equal(viewToClip.r[3], XMVectorZero()))
                 return true;
 
-            m[0][0] = m[1][1] = m[2][2] = m[3][3] = 1.0f;
-            return memcmp(projMatrix, m, sizeof(m)) == 0;
+            return XMMatrixIsIdentity(viewToClip);
         }();
 
         if (isEmptyOrIdentityMatrix)
@@ -259,11 +258,11 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         // 0 b 0 0
         // 0 0 c e
         // 0 0 d 0
-        const double a = projMatrix[0][0];
-        const double b = projMatrix[1][1];
-        const double c = projMatrix[2][2];
-        const double d = projMatrix[3][2];
-        const double e = projMatrix[2][3];
+        const double a = XMVectorGetX(viewToClip.r[0]);
+        const double b = XMVectorGetY(viewToClip.r[1]);
+        const double c = XMVectorGetZ(viewToClip.r[2]);
+        const double d = XMVectorGetZ(viewToClip.r[3]);
+        const double e = XMVectorGetW(viewToClip.r[2]);
 
         cameraAspectRatio = static_cast<float>(b / a);
 
@@ -300,18 +299,22 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     FfxApiFloatCoords3D cameraPosition; // (PrevPos - CurrentPos)
 
-    XMMATRIX worldToCamera;
+    XMMATRIX worldToCamera {}; // View matrix
+    static XMMATRIX PrevView {};
     auto loadCameraPosition = [&]()
     {
-        float(*worldToCameraView)[4] = nullptr;
-        InParameters->Get("WorldToViewMatrix", reinterpret_cast<void**>(&worldToCameraView));
+        XMMATRIX* worldToCameraPtr;
+        InParameters->Get("WorldToViewMatrix", reinterpret_cast<void**>(&worldToCameraPtr));
 
-        if (!worldToCameraView)
+        if (!worldToCameraPtr)
             return false;
 
-        memcpy(&worldToCamera, worldToCameraView, sizeof(worldToCamera));
+        worldToCamera = *worldToCameraPtr;
 
-        const XMMATRIX viewToWorld = XMMatrixInverse(nullptr, worldToCamera);
+        memcpy(&dntConstants.PrevView, &PrevView, sizeof(dntConstants.PrevView));
+        memcpy(&PrevView, &worldToCamera, sizeof(PrevView));
+
+        const XMMATRIX viewToWorld = XMMatrixInverse(nullptr, worldToCamera); // Inverse view matrix
 
         const auto position = viewToWorld.r[3];
         const auto right = viewToWorld.r[0];
@@ -329,6 +332,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     if (!loadCameraPosition())
         LOG_ERROR("Can't get camera position");
 
+    const XMMATRIX InvViewProjection = XMMatrixInverse(nullptr, viewToClip) * XMMatrixInverse(nullptr, worldToCamera);
+    memcpy(&dntConstants.InvViewProjection, &InvViewProjection, sizeof(dntConstants.InvViewProjection));
+
     ID3D12Resource* depth;
     InParameters->Get(NVSDK_NGX_Parameter_Depth, &depth);
 
@@ -337,8 +343,13 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     else
         LOG_ERROR("Depth missing!");
 
+    // Cyberpunk seems to be sending "2.5D" MVs to DLSSD, with something in alpha that looks like a mask of dynamic objects
     ID3D12Resource* motionVectors;
     InParameters->Get(NVSDK_NGX_Parameter_MotionVectors, &motionVectors); // TODO: those MVs are only 2D, not 2.5D
+    if (motionVectors)
+        DenoiserTransfer->CreateMotionVectorsResource(Device, motionVectors, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    else
+        LOG_ERROR("Motion Vectors missing!");
 
     int roughnessInNormals = 0;
     InParameters->Get("DLSS.Roughness.Mode", &roughnessInNormals);
@@ -356,7 +367,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         LOG_ERROR("Normals missing!");
 
     ID3D12Resource* specularAlbedo;
-    InParameters->Get("DLSS.Input.SpecularAlbedo", &specularAlbedo); // TODO: add NoV (the saturated dot product of the view vector and surface normal) to alpha
+    InParameters->Get("DLSS.Input.SpecularAlbedo", &specularAlbedo);
     if (specularAlbedo)
         DenoiserTransfer->CreateSpecularAlbedoResource(Device, specularAlbedo, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     else
@@ -396,7 +407,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     denoiserParams.linearDepth =
         ffxApiGetResourceDX12(DenoiserTransfer->LinearDepth(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.motionVectors =
-        ffxApiGetResourceDX12(motionVectors, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+        ffxApiGetResourceDX12(DenoiserTransfer->MotionVectors(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.normals =
         ffxApiGetResourceDX12(DenoiserTransfer->Normals(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.specularAlbedo =
@@ -407,8 +418,11 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
     InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);
 
-    InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_X, &denoiserParams.motionVectorScale.x);
-    InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_Y, &denoiserParams.motionVectorScale.y);
+    //InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_X, &denoiserParams.motionVectorScale.x);
+    //InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_Y, &denoiserParams.motionVectorScale.y);
+
+    denoiserParams.motionVectorScale.x = 1;
+    denoiserParams.motionVectorScale.y = 1;
 
     denoiserParams.cameraPositionDelta.x = cameraPrevPosition.x - cameraPosition.x;
     denoiserParams.cameraPositionDelta.y = cameraPrevPosition.y - cameraPosition.y;

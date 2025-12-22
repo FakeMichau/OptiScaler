@@ -2,28 +2,34 @@
 
 #include <pch.h>
 #include <d3dcompiler.h>
+#include <DirectXMath.h>
+using namespace DirectX;
 
 struct DntConstants
 {
-    int depthNonLinear = false;
-    int depthInverted = false;
-    float cameraFar = 0.0f;
-    float cameraNear = 0.0f;
-    float InvProjectionMatrix[4][4];
-
     int roughnessInNormals;
+    int depthNonLinear;
+    int depthInverted;
+    float cameraFar;
+    float cameraNear;
+
+    XMMATRIX InvProjection;
+    XMMATRIX InvViewProjection;
+    XMMATRIX PrevView;
 };
 
 static std::string dntCode = R"(
 cbuffer Params : register(b0)
 {
+    int roughnessInNormals;
     int depthNonLinear;
     int depthInverted;
     float cameraFar;
     float cameraNear;
-    float4x4 InvProjectionMatrix;
     
-    int roughnessInNormals;
+    matrix InvProjection; // ClipToCamera
+    matrix InvViewProjection; // ClipToWorld 
+    matrix PrevView; // Prev WorldToCamera
 };
 
 Texture2D<float> DepthInput : register(t0);
@@ -31,15 +37,17 @@ Texture2D<float4> NormalsInput : register(t1);
 Texture2D<float> RoughnessInput : register(t2);
 Texture2D<float3> SpecularAlbedoInput : register(t3);
 Texture2D<float3> DiffuseAlbedoInput : register(t4);
-Texture2D<float> SpecularRayLengthInput : register(t5);
-Texture2D<float3> ColorInput : register(t6);
+Texture2D<float4> MotionVectorsInput : register(t5);
+Texture2D<float> SpecularRayLengthInput : register(t6);
+Texture2D<float3> ColorInput : register(t7);
 
 RWTexture2D<float> LinearDepthOutput : register(u0);
 RWTexture2D<float4> PackedNormalsOutput : register(u1);
 RWTexture2D<float4> SpecularAlbedoOutput : register(u2);
 RWTexture2D<float4> DiffuseAlbedoOutput : register(u3);
 RWTexture2D<float4> FusedAlbedoOutput : register(u4);
-RWTexture2D<float4> ColorOutput : register(u5);
+RWTexture2D<float4> MotionVectorsOutput : register(u5);
+RWTexture2D<float4> ColorOutput : register(u6);
 
 // Directly from AMD's docs
 float2 NormalToOctahedronUv(float3 N)
@@ -51,83 +59,104 @@ float2 NormalToOctahedronUv(float3 N)
     return N.xy * 0.5 + 0.5;
 }
 
-// TODO: add support for infinite far plane
-// TODO: pass (cameraNear * cameraFar) as constants to avoid recomputing
-float DepthToLinear(float depth)
+float3 InvProjectPosition(float3 coord, float4x4 mat)
 {
-    if (depthNonLinear == 0)
-        return depth;
-    
-    float range = cameraFar - cameraNear;
-
-    float linearDepth;
-    if (depthInverted)
-        linearDepth = (cameraNear * cameraFar) / (cameraNear + depth * range);
-    else
-        linearDepth = (cameraNear * cameraFar) / (cameraFar - depth * range);
-    
-    return saturate((linearDepth - cameraNear) / range);
+    coord.y = (1 - coord.y);
+    coord.xy = 2 * coord.xy - 1;
+    float4 projected = mul(mat, float4(coord, 1));
+    projected.xyz /= projected.w;
+    return projected.xyz;
 }
 
-float4 GetClipPos(float2 uv, float depth)
+float3 ScreenSpaceToViewSpace(float3 screen_uv_coord, float4x4 invProj)
 {
-    float2 ndc;
-    ndc.x = uv.x * 2.0f - 1.0f;
-    ndc.y = 1.0f - uv.y * 2.0f; // flip Y if needed
-    
-    return float4(ndc, depth, 1.0f);
+    return InvProjectPosition(screen_uv_coord, invProj);
 }
 
-float GetNoV(float2 uv, float depth, float3 normals)
+float3 ScreenSpaceToWorldSpace(float3 screen_space_position, float4x4 invViewProj)
+{
+    return InvProjectPosition(screen_space_position, invViewProj);
+}
+
+float GetNoV(float3 view, float3 normals)
 {
     // TODO: assumes Normals are already in view space
     float3 N = normalize(normals * 2.0f - 1.0f);
+        
+    float3 V = normalize(-view);
     
-    float4 viewPos = mul(InvProjectionMatrix, GetClipPos(uv, depth));
-    viewPos.xyz /= viewPos.w;
-    
-    float3 V = normalize(-viewPos.xyz);
-    
+    float NoV = dot(-view, normals);
+
+    // TODO: might be wrong, we pass FFX_DENOISER_DISPATCH_NON_GAMMA_ALBEDO so this might need to be done
     return saturate(dot(N, V));
 }
 
 [numthreads(32, 32, 1)]
 void CSMain(uint3 DTid : SV_DispatchThreadID)
 {
-    float depth = DepthInput.Load(int3(DTid.xy, 0)).x;
-    LinearDepthOutput[DTid.xy] = DepthToLinear(depth);
+    uint2 pixelId = DTid.xy;
+    float2 pixelCenter = float2(pixelId) + 0.5;
     
-    float4 normals = NormalsInput.Load(int3(DTid.xy, 0));
+    float2 screenSize;
+    DepthInput.GetDimensions(screenSize.x, screenSize.y);
+    
+    if (any(pixelId >= (uint2) screenSize))
+    {
+        return;
+    }
+    
+    // TODO: do something if this depth is linear
+    float nonLinearDepth = DepthInput.Load(int3(pixelId, 0)).x;
+    
+    float3 screenUVW = float3(pixelCenter / screenSize, nonLinearDepth);
+    
+    // TODO: take care of infinite far plane
+    float3 viewSpacePos = ScreenSpaceToViewSpace(screenUVW, InvProjection);
+    viewSpacePos.z = -viewSpacePos.z; // Correct the funny
+    
+    LinearDepthOutput[pixelId] = clamp(-viewSpacePos.z, cameraNear, cameraFar - 0.1f);
+    
+    float4 normals = NormalsInput.Load(int3(pixelId, 0));
     
     float roughness;
     if (roughnessInNormals > 0)
         roughness = normals.a;
     else
-        roughness = RoughnessInput.Load(int3(DTid.xy, 0));
+        roughness = RoughnessInput.Load(int3(pixelId, 0));
     
     // Material as 0
-    PackedNormalsOutput[DTid.xy] = float4(NormalToOctahedronUv(normals.rgb), roughness, 0);
+    PackedNormalsOutput[pixelId] = float4(NormalToOctahedronUv(normals.rgb), roughness, 0);
     
-    float3 specularAlbedo = SpecularAlbedoInput.Load(int3(DTid.xy, 0));
-    float3 diffuseAlbedo = DiffuseAlbedoInput.Load(int3(DTid.xy, 0));
-    
-    float2 screenSize;
-    DepthInput.GetDimensions(screenSize.x, screenSize.y);
-    
-    float2 uv = (DTid.xy + 0.5f) / screenSize;
+    // Linear albedo
+    float3 specularAlbedo = SpecularAlbedoInput.Load(int3(pixelId, 0));
+    float3 diffuseAlbedo = DiffuseAlbedoInput.Load(int3(pixelId, 0));
     
     // TODO: if depth is linear then this doesn't work
-    float NoV = GetNoV(uv, depth, normals.xyz);
+    float NoV = GetNoV(viewSpacePos, normals.xyz);
     
-    SpecularAlbedoOutput[DTid.xy] = float4(specularAlbedo, NoV);
-    DiffuseAlbedoOutput[DTid.xy] = float4(diffuseAlbedo, 0); // metalness as 0
-    FusedAlbedoOutput[DTid.xy] = float4(max(specularAlbedo, diffuseAlbedo), NoV);
+    float4 specularAlbedo_NoV = float4(specularAlbedo, NoV);
+    float4 diffuseAlbedo_Metallic = float4(diffuseAlbedo, 0); // metalness as 0
+    float3 fusedModulator = max(1e-3, max(specularAlbedo_NoV.xyz, diffuseAlbedo_Metallic.xyz));
     
-    float3 color = ColorInput.Load(int3(DTid.xy, 0));
-    float specularRayLength = SpecularRayLengthInput.Load(int3(DTid.xy, 0));
+    SpecularAlbedoOutput[pixelId] = specularAlbedo_NoV;
+    DiffuseAlbedoOutput[pixelId] = diffuseAlbedo_Metallic;
+    FusedAlbedoOutput[pixelId] = float4(fusedModulator, NoV);
     
-    ColorOutput[DTid.xy] = float4(color, specularRayLength);
-
+    // Color
+    float3 color = ColorInput.Load(int3(pixelId, 0));
+    float specularRayLength = SpecularRayLengthInput.Load(int3(pixelId, 0));
+    
+    ColorOutput[pixelId] = float4(color, specularRayLength);
+    
+    // MVs
+    float4 motionVector = MotionVectorsInput.Load(int3(pixelId, 0));
+    
+    float3 worldSpacePos = ScreenSpaceToWorldSpace(screenUVW, InvViewProjection);
+    float3 prevViewSpacePos = mul(PrevView, float4(worldSpacePos, 1.0f)).xyz;
+    prevViewSpacePos.z = -prevViewSpacePos.z; // Fix the funny
+    float depthDiff = (prevViewSpacePos.z - viewSpacePos.z);
+    
+    MotionVectorsOutput[pixelId] = float4(motionVector.xy, depthDiff, 0.0f);
 }
 )";
 

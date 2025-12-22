@@ -27,13 +27,15 @@ class DNT_Dx12 : public Shader_Dx12
 
     struct alignas(256) InternalConstants
     {
+        int roughnessInNormals;
         int depthNonLinear;
         int depthInverted;
         float cameraFar;
         float cameraNear;
-        float InvProjectionMatrix[4][4];
 
-        int roughnessInNormals;
+        XMMATRIX InvProjection;
+        XMMATRIX InvViewProjection;
+        XMMATRIX PrevView;
     };
 
     FrameDescriptorHeap _frameHeaps[DNT_NUM_OF_HEAPS];
@@ -44,6 +46,7 @@ class DNT_Dx12 : public Shader_Dx12
     DNT_Dx12::ResourceWithState specularAlbedo {};
     DNT_Dx12::ResourceWithState diffuseAlbedo {};
     DNT_Dx12::ResourceWithState fusedAlbedo {};
+    DNT_Dx12::ResourceWithState motionVectors {};
     DNT_Dx12::ResourceWithState color {};
     DNT_Dx12::ResourceWithState specularRayLength {};
 
@@ -194,11 +197,28 @@ class DNT_Dx12 : public Shader_Dx12
         return color.SetBufferState(InCommandList, InState);
     }
 
+    // Depth
+    bool CreateMotionVectorsResource(ID3D12Device* InDevice, ID3D12Resource* InMotionVectors, D3D12_RESOURCE_STATES InState)
+    {
+        auto result = motionVectors.CreateBufferResource(InDevice, InMotionVectors, InState);
+
+        if (result)
+            motionVectors.rawResource->SetName(L"DNT_motionVectors");
+
+        return result;
+    }
+
+    void SetMotionVectorsState(ID3D12GraphicsCommandList* InCommandList, D3D12_RESOURCE_STATES InState)
+    {
+        return motionVectors.SetBufferState(InCommandList, InState);
+    }
+
     ID3D12Resource* LinearDepth() { return linearDepth.rawResource; }
     ID3D12Resource* Normals() { return normals.rawResource; }
     ID3D12Resource* SpecularAlbedo() { return specularAlbedo.rawResource; }
     ID3D12Resource* DiffuseAlbedo() { return diffuseAlbedo.rawResource; }
     ID3D12Resource* FusedAlbedo() { return fusedAlbedo.rawResource; }
+    ID3D12Resource* MotionVectors() { return motionVectors.rawResource; }
     ID3D12Resource* Color() { return color.rawResource; }
 
     // TODO: fix

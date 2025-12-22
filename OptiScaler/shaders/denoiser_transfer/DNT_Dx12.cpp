@@ -99,6 +99,16 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
 
     InDevice->CreateShaderResourceView(InDiffuseAlbedo, &diffuseAlbedoDesc, currentHeap.GetSrvCPU(4));
 
+    // Motion Vectors
+    auto inMotionVectorsDesc = InMotionVectors->GetDesc();
+    D3D12_SHADER_RESOURCE_VIEW_DESC motionVectorsDesc = {};
+    motionVectorsDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    motionVectorsDesc.Format = Shader_Dx12::TranslateTypelessFormats(inMotionVectorsDesc.Format);
+    motionVectorsDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    motionVectorsDesc.Texture2D.MipLevels = 1;
+
+    InDevice->CreateShaderResourceView(InMotionVectors, &motionVectorsDesc, currentHeap.GetSrvCPU(5));
+
     // Specular Ray Length
     auto inSpecularRayLengthDesc = InSpecularRayLength->GetDesc();
     D3D12_SHADER_RESOURCE_VIEW_DESC specularRayLengthDesc = {};
@@ -107,7 +117,7 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     specularRayLengthDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     specularRayLengthDesc.Texture2D.MipLevels = 1;
 
-    InDevice->CreateShaderResourceView(InSpecularRayLength, &specularRayLengthDesc, currentHeap.GetSrvCPU(5));
+    InDevice->CreateShaderResourceView(InSpecularRayLength, &specularRayLengthDesc, currentHeap.GetSrvCPU(6));
 
     // Color
     auto inColorDesc = InColor->GetDesc();
@@ -117,7 +127,7 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     colorDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     colorDesc.Texture2D.MipLevels = 1;
 
-    InDevice->CreateShaderResourceView(InColor, &colorDesc, currentHeap.GetSrvCPU(6));
+    InDevice->CreateShaderResourceView(InColor, &colorDesc, currentHeap.GetSrvCPU(7));
 
     /// Outputs
 
@@ -171,6 +181,17 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     InDevice->CreateUnorderedAccessView(fusedAlbedo.rawResource, nullptr, &uavFusedAlbedoDesc,
                                         currentHeap.GetUavCPU(4));
 
+    // Motion Vectors
+    auto outMotionVectorsDesc = motionVectors.rawResource->GetDesc();
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavMotionVectorsDesc = {};
+    uavMotionVectorsDesc.Format = Shader_Dx12::TranslateTypelessFormats(outMotionVectorsDesc.Format);
+    uavMotionVectorsDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavMotionVectorsDesc.Texture2D.MipSlice = 0;
+
+    InDevice->CreateUnorderedAccessView(motionVectors.rawResource, nullptr, &uavMotionVectorsDesc,
+                                        currentHeap.GetUavCPU(5));
+
+
     // Color
     auto outColorDesc = color.rawResource->GetDesc();
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavColorDesc = {};
@@ -179,7 +200,7 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     uavColorDesc.Texture2D.MipSlice = 0;
 
     InDevice->CreateUnorderedAccessView(color.rawResource, nullptr, &uavColorDesc,
-                                        currentHeap.GetUavCPU(5));
+                                        currentHeap.GetUavCPU(6));
 
     InternalConstants constants {};
 
@@ -187,7 +208,9 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     constants.depthInverted = InConstants.depthInverted;
     constants.cameraFar = InConstants.cameraFar;
     constants.cameraNear = InConstants.cameraNear;
-    memcpy(constants.InvProjectionMatrix, InConstants.InvProjectionMatrix, sizeof(constants.InvProjectionMatrix));
+    memcpy(&constants.InvProjection, &InConstants.InvProjection, sizeof(constants.InvProjection));
+    memcpy(&constants.InvViewProjection, &InConstants.InvViewProjection, sizeof(constants.InvViewProjection));
+    memcpy(&constants.PrevView, &InConstants.PrevView, sizeof(constants.PrevView));
 
     constants.roughnessInNormals = InConstants.roughnessInNormals;
 
@@ -248,10 +271,10 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
 
     CD3DX12_DESCRIPTOR_RANGE1 descriptorRanges[] = {
         // 7 SRVs starting at register t0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0, 0),
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 8, 0, 0),
 
         // 6 UAVs starting at register u0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 6, 0, 0),
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 7, 0, 0),
 
         // 1 CBV starting at register b0, space 0
         CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0)
@@ -363,7 +386,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
 
     for (int i = 0; i < DNT_NUM_OF_HEAPS; i++)
     {
-        if (!_frameHeaps[i].Initialize(InDevice, 7, 6, 1))
+        if (!_frameHeaps[i].Initialize(InDevice, 8, 7, 1))
         {
             LOG_ERROR("[{0}] Failed to init heap", _name);
             _init = false;
