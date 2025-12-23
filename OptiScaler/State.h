@@ -172,6 +172,10 @@ class State
     std::vector<uint64_t> ffxFGVersionIds {};
     uint32_t currentFsr4Model {};
 
+    // FSRD
+    bool fsrdResetHistory = false;
+    bool fsrdSkipDenoiser = false;
+
     // Linux checks
     bool isRunningOnLinux = false;
     bool isRunningOnDXVK = false;

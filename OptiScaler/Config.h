@@ -348,6 +348,14 @@ class Config
     CustomOptional<float> FsrAccAddPerFrame { 0.333f };
     CustomOptional<float> FsrMinDisOccAcc { -0.333f };
 
+    // FSRD
+    CustomOptional<float> FsrdHistoryRejectionStrength { 0.5f };
+    CustomOptional<float> FsrdCrossBilateralNormalStrength { 0.5f };
+    CustomOptional<float> FsrdStabilityBias { 0.1f };
+    CustomOptional<float> FsrdMaxRadiance { 10000.0f };
+    CustomOptional<float> FsrdRadianceClipStdK { 50.0f };
+    CustomOptional<float> FsrdGaussianKernelRelaxation { 0.0f };
+
     // FSR Common
     CustomOptional<float> FsrVerticalFov { 60.0f };
     CustomOptional<float> FsrHorizontalFov { 0.0f }; // off by default

@@ -169,10 +169,13 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     auto getDefaultSettingsResult = FfxApiProxy::D3D12_Query(&_denoiserContext, &denoiserDefaultSettings.header);
 
-    // Adjust settings here
-    denoiserSettings.maxRadiance = 1.0f;
-    denoiserSettings.stabilityBias = 0.0f;
-    denoiserSettings.gaussianKernelRelaxation = 1.0f;
+    // Adjust settings
+    denoiserSettings.historyRejectionStrength = Config::Instance()->FsrdHistoryRejectionStrength.value_or_default();
+    denoiserSettings.crossBilateralNormalStrength = Config::Instance()->FsrdCrossBilateralNormalStrength.value_or_default();
+    denoiserSettings.stabilityBias = Config::Instance()->FsrdStabilityBias.value_or_default();
+    denoiserSettings.maxRadiance = Config::Instance()->FsrdMaxRadiance.value_or_default();
+    denoiserSettings.radianceClipStdK = Config::Instance()->FsrdRadianceClipStdK.value_or_default();
+    denoiserSettings.gaussianKernelRelaxation = Config::Instance()->FsrdGaussianKernelRelaxation.value_or_default();
 
     ffxConfigureDescDenoiserSettings denoiserSettingsDesc = {};
     denoiserSettingsDesc.header.type = FFX_API_CONFIGURE_DESC_TYPE_DENOISER_SETTINGS;
@@ -195,7 +198,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     CreateBufferResource(Device, color, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &middle);
 
-    if (Config::Instance()->OverrideSharpness.value_or_default())
+    if (State::Instance().fsrdSkipDenoiser)
     {
         CopyResource(InCommandList, color, &output, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         _frameCount++;
@@ -217,6 +220,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     int depthNonLinear = 0;
     InParameters->Get("DLSS.Use.HW.Depth", &depthNonLinear);
 
+    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
+    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);
+
     // needed to convert to linear
     // return (zNear * zFar) / (zFar - depth * (zFar - zNear));
     // Get data from SL, even when not using SL for DLSSD ?
@@ -226,6 +232,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     float cameraFovAngleVertical = 0.0f;
     float cameraAspectRatio = 0.0f;
 
+    // Projection Matrix
     XMMATRIX viewToClip {};
     auto loadCameraMatrix = [&]()
     {
@@ -237,7 +244,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
         viewToClip = *viewToClipPtr;
 
-        const XMMATRIX inverseViewToClip = XMMatrixInverse(nullptr, viewToClip);
+        XMMATRIX jitter = XMMatrixTranslation(denoiserParams.jitterOffsets.x, denoiserParams.jitterOffsets.y, 0.0f);
+        const XMMATRIX ProjJittered = XMMatrixMultiply(jitter, viewToClip);
+        const XMMATRIX inverseViewToClip = XMMatrixInverse(nullptr, ProjJittered);
         memcpy(&dntConstants.InvProjection, &inverseViewToClip, sizeof(dntConstants.InvProjection));
 
         // BUG: Various RTX Remix-based games pass in an identity matrix which is completely useless. No
@@ -299,7 +308,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     FfxApiFloatCoords3D cameraPosition; // (PrevPos - CurrentPos)
 
-    XMMATRIX worldToCamera {}; // View matrix
+    // View matrix
+    XMMATRIX worldToCamera {};
     static XMMATRIX PrevView {};
     auto loadCameraPosition = [&]()
     {
@@ -332,7 +342,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     if (!loadCameraPosition())
         LOG_ERROR("Can't get camera position");
 
-    const XMMATRIX InvViewProjection = XMMatrixInverse(nullptr, viewToClip) * XMMatrixInverse(nullptr, worldToCamera);
+    const XMMATRIX InvViewProjection = dntConstants.InvProjection * XMMatrixInverse(nullptr, worldToCamera);
     memcpy(&dntConstants.InvViewProjection, &InvViewProjection, sizeof(dntConstants.InvViewProjection));
 
     ID3D12Resource* depth;
@@ -415,14 +425,11 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     denoiserParams.diffuseAlbedo =
         ffxApiGetResourceDX12(DenoiserTransfer->DiffuseAlbedo(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
 
-    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
-    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);
+    InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_X, &denoiserParams.motionVectorScale.x);
+    InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_Y, &denoiserParams.motionVectorScale.y);
 
-    //InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_X, &denoiserParams.motionVectorScale.x);
-    //InParameters->Get(NVSDK_NGX_Parameter_MV_Scale_Y, &denoiserParams.motionVectorScale.y);
-
-    denoiserParams.motionVectorScale.x = 1;
-    denoiserParams.motionVectorScale.y = 1;
+    denoiserParams.motionVectorScale.x /= _renderWidth;
+    denoiserParams.motionVectorScale.y /= _renderHeight;
 
     denoiserParams.cameraPositionDelta.x = cameraPrevPosition.x - cameraPosition.x;
     denoiserParams.cameraPositionDelta.y = cameraPrevPosition.y - cameraPosition.y;
@@ -441,6 +448,12 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     denoiserParams.frameIndex = _frameCount;
 
     denoiserParams.flags |= FFX_DENOISER_DISPATCH_NON_GAMMA_ALBEDO;
+
+    if (State::Instance().fsrdResetHistory)
+    {
+        denoiserParams.flags |= FFX_DENOISER_DISPATCH_RESET;
+        State::Instance().fsrdResetHistory = false;
+    }
 
     auto denoiserResult = FfxApiProxy::D3D12_Dispatch(&_denoiserContext, &denoiserParams.header);
 

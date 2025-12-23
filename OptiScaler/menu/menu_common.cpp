@@ -2817,6 +2817,49 @@ bool MenuCommon::RenderMenu()
                                 ImGui::Spacing();
                             }
                         }
+
+                        if (currentBackend == "fsrd")
+                        {
+                            float historyRejectionStrength = config->FsrdHistoryRejectionStrength.value_or_default();
+                            if (ImGui::SliderFloat("History Rejection Strength", &historyRejectionStrength, 0.00f, 1.0f, "%.2f"))
+                                config->FsrdHistoryRejectionStrength = historyRejectionStrength;
+
+                            float crossBilateralNormalStrength =
+                                config->FsrdCrossBilateralNormalStrength.value_or_default();
+                            if (ImGui::SliderFloat("Cross Bilateral Normal Strength", &crossBilateralNormalStrength, 0.00f, 1.0f, "%.2f"))
+                                config->FsrdCrossBilateralNormalStrength = crossBilateralNormalStrength;
+
+                            float stabilityBias = config->FsrdStabilityBias.value_or_default();
+                            if (ImGui::SliderFloat("Stability Bias", &stabilityBias, 0.00f, 1.0f, "%.2f"))
+                                config->FsrdStabilityBias = stabilityBias;
+
+                            float maxRadiance = config->FsrdMaxRadiance.value_or_default();
+                            if (ImGui::SliderFloat("Max Radiance", &maxRadiance, 0.00f, 100000.0f, "%.1f"))
+                                config->FsrdMaxRadiance = maxRadiance;
+
+                            float radianceClipStdK = config->FsrdRadianceClipStdK.value_or_default();
+                            if (ImGui::SliderFloat("Radiance Clip Std K", &radianceClipStdK, 0.00f, 100000.0f, "%.1f"))
+                                config->FsrdRadianceClipStdK = radianceClipStdK;
+
+                            float gaussianKernelRelaxation = config->FsrdGaussianKernelRelaxation.value_or_default();
+                            if (ImGui::SliderFloat("Gaussian Kernel Relaxation", &gaussianKernelRelaxation, 0.00f, 1.0f,
+                                                   "%.2f"))
+                                config->FsrdGaussianKernelRelaxation = gaussianKernelRelaxation;
+
+
+                            if (ImGui::Button("Reset"))
+                            {
+                                state.fsrdResetHistory = true;
+                            }
+                            ShowHelpMarker("Button for resetting the history accumulation");
+
+                            if (bool skipDenoiser = state.fsrdSkipDenoiser;
+                                ImGui::Checkbox("Skip Denoiser", &skipDenoiser))
+                            {
+                                state.fsrdSkipDenoiser = skipDenoiser;
+                            }
+                            ShowHelpMarker("TODO: only works with DLAA");
+                        }
                     }
 
                     // DLSS -----------------
