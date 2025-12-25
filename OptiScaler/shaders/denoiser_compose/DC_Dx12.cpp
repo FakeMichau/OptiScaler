@@ -5,7 +5,7 @@
 #include <Config.h>
 
 bool DC_Dx12::ResourceWithState::CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSource,
-                                             D3D12_RESOURCE_STATES InState)
+                                                      D3D12_RESOURCE_STATES InState)
 {
     auto resourceFlags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS |
                          D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
@@ -19,15 +19,13 @@ bool DC_Dx12::ResourceWithState::CreateBufferResource(ID3D12Device* InDevice, ID
     return result;
 }
 
-void DC_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCommandList,
-                                                 D3D12_RESOURCE_STATES InState)
+void DC_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCommandList, D3D12_RESOURCE_STATES InState)
 {
     return Shader_Dx12::SetBufferState(InCommandList, InState, rawResource, &state);
 }
 
-bool DC_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList,
-                        ID3D12Resource* InFusedAlbedo, ID3D12Resource* InColor,
-                        DcConstants InConstants)
+bool DC_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InFusedAlbedo,
+                       ID3D12Resource* InColor, DcConstants InConstants)
 {
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InColor == nullptr)
         return false;
@@ -67,8 +65,7 @@ bool DC_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdL
     uavColorDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
     uavColorDesc.Texture2D.MipSlice = 0;
 
-    InDevice->CreateUnorderedAccessView(color.rawResource, nullptr, &uavColorDesc,
-                                        currentHeap.GetUavCPU(0));
+    InDevice->CreateUnorderedAccessView(color.rawResource, nullptr, &uavColorDesc, currentHeap.GetUavCPU(0));
 
     InternalConstants constants {};
     // TODO: No constants, remove CBV ???
@@ -201,7 +198,7 @@ DC_Dx12::DC_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InNam
     }
 
     // TODO: Add precompiled shaders
-    //if (Config::Instance()->UsePrecompiledShaders.value_or_default())
+    // if (Config::Instance()->UsePrecompiledShaders.value_or_default())
     //{
     //    D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
     //    computePsoDesc.pRootSignature = _rootSignature;
@@ -216,7 +213,7 @@ DC_Dx12::DC_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InNam
     //        return;
     //    }
     //}
-    //else
+    // else
     {
         // Compile shader blobs
         ID3DBlob* _recEncodeShader = DC_CompileShader(dcCode.c_str(), "CSMain", "cs_5_0");

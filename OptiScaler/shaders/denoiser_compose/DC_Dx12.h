@@ -37,8 +37,8 @@ class DC_Dx12 : public Shader_Dx12
     uint32_t InNumThreadsY = 32;
 
   public:
-    bool Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList,
-                  ID3D12Resource* InFusedAlbedo, ID3D12Resource* InColor, DcConstants InConstants);
+    bool Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InFusedAlbedo,
+                  ID3D12Resource* InColor, DcConstants InConstants);
 
     // Color
     bool CreateColorResource(ID3D12Device* InDevice, ID3D12Resource* InColor, D3D12_RESOURCE_STATES InState)
@@ -58,8 +58,8 @@ class DC_Dx12 : public Shader_Dx12
         }
 
         auto result = Shader_Dx12::CreateBufferResource(InDevice, InColor, InState, &color.rawResource, resourceFlags);
-        //auto result = Shader_Dx12::CreateBufferResource(InDevice, InColor, InState, &color.rawResource,
-        //                                                resourceFlags, 0, 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
+        // auto result = Shader_Dx12::CreateBufferResource(InDevice, InColor, InState, &color.rawResource,
+        //                                                 resourceFlags, 0, 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
 
         if (result && color.state == D3D12_INVALID_STATE)
         {

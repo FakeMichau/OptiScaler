@@ -530,12 +530,14 @@ class FfxApiProxy
 
         if (denoiser_dx12.dll != nullptr && denoiser_dx12.Configure == nullptr)
         {
-            denoiser_dx12.Configure = (PfnFfxConfigure) KernelBaseProxy::GetProcAddress_()(denoiser_dx12.dll, "ffxConfigure");
+            denoiser_dx12.Configure =
+                (PfnFfxConfigure) KernelBaseProxy::GetProcAddress_()(denoiser_dx12.dll, "ffxConfigure");
             denoiser_dx12.CreateContext =
                 (PfnFfxCreateContext) KernelBaseProxy::GetProcAddress_()(denoiser_dx12.dll, "ffxCreateContext");
             denoiser_dx12.DestroyContext =
                 (PfnFfxDestroyContext) KernelBaseProxy::GetProcAddress_()(denoiser_dx12.dll, "ffxDestroyContext");
-            denoiser_dx12.Dispatch = (PfnFfxDispatch) KernelBaseProxy::GetProcAddress_()(denoiser_dx12.dll, "ffxDispatch");
+            denoiser_dx12.Dispatch =
+                (PfnFfxDispatch) KernelBaseProxy::GetProcAddress_()(denoiser_dx12.dll, "ffxDispatch");
             denoiser_dx12.Query = (PfnFfxQuery) KernelBaseProxy::GetProcAddress_()(denoiser_dx12.dll, "ffxQuery");
 
             if (Config::Instance()->EnableFfxInputs.value_or_default() && denoiser_dx12.CreateContext != nullptr)
@@ -759,8 +761,8 @@ class FfxApiProxy
                 if (queryResult == FFX_API_RETURN_OK)
                 {
                     parse_version(versionNames[0], &denoiser_dx12.version);
-                    LOG_INFO("FfxApi Dx12 D version: {}.{}.{}", denoiser_dx12.version.major, denoiser_dx12.version.minor,
-                             denoiser_dx12.version.patch);
+                    LOG_INFO("FfxApi Dx12 D version: {}.{}.{}", denoiser_dx12.version.major,
+                             denoiser_dx12.version.minor, denoiser_dx12.version.patch);
                 }
                 else
                 {

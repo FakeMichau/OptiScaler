@@ -5,7 +5,7 @@
 #include <Config.h>
 
 bool DNT_Dx12::ResourceWithState::CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSource,
-                                             D3D12_RESOURCE_STATES InState)
+                                                       D3D12_RESOURCE_STATES InState)
 {
     auto resourceFlags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS |
                          D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
@@ -28,11 +28,11 @@ void DNT_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCo
 bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth,
                         ID3D12Resource* InNormals, ID3D12Resource* InRoughness, ID3D12Resource* InSpecularAlbedo,
                         ID3D12Resource* InDiffuseAlbedo, ID3D12Resource* InMotionVectors,
-                        ID3D12Resource* InSpecularRayLength, ID3D12Resource* InColor,
-                        DntConstants InConstants)
+                        ID3D12Resource* InSpecularRayLength, ID3D12Resource* InColor, DntConstants InConstants)
 {
     // TODO: add all the checks
-    if (!_init || InDevice == nullptr || InCmdList == nullptr || InDepth == nullptr || linearDepth.rawResource == nullptr)
+    if (!_init || InDevice == nullptr || InCmdList == nullptr || InDepth == nullptr ||
+        linearDepth.rawResource == nullptr)
         return false;
 
     LOG_DEBUG("[{0}] Start!", _name);
@@ -149,8 +149,7 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     outPackedNormalsDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
     outPackedNormalsDesc.Texture2D.MipSlice = 0;
 
-    InDevice->CreateUnorderedAccessView(normals.rawResource, nullptr, &outPackedNormalsDesc,
-                                        currentHeap.GetUavCPU(1));
+    InDevice->CreateUnorderedAccessView(normals.rawResource, nullptr, &outPackedNormalsDesc, currentHeap.GetUavCPU(1));
 
     // Specular Albedo
     auto outSpecularAlbedoDesc = specularAlbedo.rawResource->GetDesc();
@@ -192,7 +191,6 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     InDevice->CreateUnorderedAccessView(motionVectors.rawResource, nullptr, &uavMotionVectorsDesc,
                                         currentHeap.GetUavCPU(5));
 
-
     // Color
     auto outColorDesc = color.rawResource->GetDesc();
     D3D12_UNORDERED_ACCESS_VIEW_DESC uavColorDesc = {};
@@ -200,8 +198,7 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     uavColorDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
     uavColorDesc.Texture2D.MipSlice = 0;
 
-    InDevice->CreateUnorderedAccessView(color.rawResource, nullptr, &uavColorDesc,
-                                        currentHeap.GetUavCPU(6));
+    InDevice->CreateUnorderedAccessView(color.rawResource, nullptr, &uavColorDesc, currentHeap.GetUavCPU(6));
 
     InternalConstants constants {};
 
@@ -343,7 +340,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
     }
 
     // TODO: Add precompiled shaders
-    //if (Config::Instance()->UsePrecompiledShaders.value_or_default())
+    // if (Config::Instance()->UsePrecompiledShaders.value_or_default())
     //{
     //    D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
     //    computePsoDesc.pRootSignature = _rootSignature;
@@ -358,7 +355,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
     //        return;
     //    }
     //}
-    //else
+    // else
     {
         // Compile shader blobs
         ID3DBlob* _recEncodeShader = DNT_CompileShader(dntCode.c_str(), "CSMain", "cs_5_0");

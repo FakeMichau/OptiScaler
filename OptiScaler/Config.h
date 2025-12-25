@@ -208,7 +208,10 @@ class Config
 
     // DLSS
     CustomOptional<bool> DLSSEnabled { true };
-    CustomOptional<bool> DLSSDCopingOnAMD { true }; // TODO: instead of a config, make it check if AMD denoiser is supported before the first GetFeatureRequirements (or whatever call that needs to know if we want to expose DLSSD on AMD)
+    CustomOptional<bool> DLSSDCopingOnAMD {
+        true
+    }; // TODO: instead of a config, make it check if AMD denoiser is supported before the first GetFeatureRequirements
+       // (or whatever call that needs to know if we want to expose DLSSD on AMD)
     CustomOptional<std::wstring, NoDefault> NvngxPath;
     CustomOptional<std::wstring, NoDefault> NVNGX_DLSS_Library;
     CustomOptional<std::wstring, NoDefault> DLSSFeaturePath;

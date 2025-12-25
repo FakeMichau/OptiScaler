@@ -2821,12 +2821,14 @@ bool MenuCommon::RenderMenu()
                         if (currentBackend == "fsrd")
                         {
                             float historyRejectionStrength = config->FsrdHistoryRejectionStrength.value_or_default();
-                            if (ImGui::SliderFloat("History Rejection Strength", &historyRejectionStrength, 0.00f, 1.0f, "%.2f"))
+                            if (ImGui::SliderFloat("History Rejection Strength", &historyRejectionStrength, 0.00f, 1.0f,
+                                                   "%.2f"))
                                 config->FsrdHistoryRejectionStrength = historyRejectionStrength;
 
                             float crossBilateralNormalStrength =
                                 config->FsrdCrossBilateralNormalStrength.value_or_default();
-                            if (ImGui::SliderFloat("Cross Bilateral Normal Strength", &crossBilateralNormalStrength, 0.00f, 1.0f, "%.2f"))
+                            if (ImGui::SliderFloat("Cross Bilateral Normal Strength", &crossBilateralNormalStrength,
+                                                   0.00f, 1.0f, "%.2f"))
                                 config->FsrdCrossBilateralNormalStrength = crossBilateralNormalStrength;
 
                             float stabilityBias = config->FsrdStabilityBias.value_or_default();
@@ -2845,7 +2847,6 @@ bool MenuCommon::RenderMenu()
                             if (ImGui::SliderFloat("Gaussian Kernel Relaxation", &gaussianKernelRelaxation, 0.00f, 1.0f,
                                                    "%.2f"))
                                 config->FsrdGaussianKernelRelaxation = gaussianKernelRelaxation;
-
 
                             if (ImGui::Button("Reset"))
                             {

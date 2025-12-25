@@ -29,7 +29,7 @@ class FSRDFeatureDx12 : public FSRDFeature, public IFeature_Dx12
     float lastCameraFar {};
     float lastCameraFovAngleVertical {};
 
-    ID3D12Resource* color {}; // DO NOT release
+    ID3D12Resource* color {};          // DO NOT release
     ID3D12Resource* denoiserOutput {}; // release when needed
 
   protected:

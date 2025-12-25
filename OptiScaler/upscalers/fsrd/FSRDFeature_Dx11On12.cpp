@@ -27,7 +27,7 @@ FSRDFeatureDx11on12::FSRDFeatureDx11on12(unsigned int InHandleId, NVSDK_NGX_Para
 }
 
 bool FSRDFeatureDx11on12::Init(ID3D11Device* InDevice, ID3D11DeviceContext* InContext,
-                                NVSDK_NGX_Parameter* InParameters)
+                               NVSDK_NGX_Parameter* InParameters)
 {
     LOG_FUNC();
 

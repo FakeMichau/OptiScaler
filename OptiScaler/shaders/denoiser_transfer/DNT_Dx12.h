@@ -59,8 +59,8 @@ class DNT_Dx12 : public Shader_Dx12
                   ID3D12Resource* InColor, DntConstants InConstants);
 
     // Depth
-    bool CreateDepthResource(ID3D12Device* InDevice, ID3D12Resource* InDepth, D3D12_RESOURCE_STATES InState) 
-    { 
+    bool CreateDepthResource(ID3D12Device* InDevice, ID3D12Resource* InDepth, D3D12_RESOURCE_STATES InState)
+    {
         auto result = linearDepth.CreateBufferResource(InDevice, InDepth, InState);
 
         if (result)
@@ -69,7 +69,7 @@ class DNT_Dx12 : public Shader_Dx12
         return result;
     }
 
-    void SetDepthState(ID3D12GraphicsCommandList* InCommandList, D3D12_RESOURCE_STATES InState) 
+    void SetDepthState(ID3D12GraphicsCommandList* InCommandList, D3D12_RESOURCE_STATES InState)
     {
         return linearDepth.SetBufferState(InCommandList, InState);
     }
@@ -92,7 +92,6 @@ class DNT_Dx12 : public Shader_Dx12
 
         return result;
     }
-
 
     void SetNormalsState(ID3D12GraphicsCommandList* InCommandList, D3D12_RESOURCE_STATES InState)
     {
@@ -179,8 +178,8 @@ class DNT_Dx12 : public Shader_Dx12
         }
 
         auto result = Shader_Dx12::CreateBufferResource(InDevice, InColor, InState, &color.rawResource, resourceFlags);
-        //auto result = Shader_Dx12::CreateBufferResource(InDevice, InColor, InState, &color.rawResource,
-        //                                                resourceFlags, 0, 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
+        // auto result = Shader_Dx12::CreateBufferResource(InDevice, InColor, InState, &color.rawResource,
+        //                                                 resourceFlags, 0, 0, DXGI_FORMAT_R16G16B16A16_FLOAT);
 
         if (result && color.state == D3D12_INVALID_STATE)
         {
@@ -197,7 +196,8 @@ class DNT_Dx12 : public Shader_Dx12
     }
 
     // Depth
-    bool CreateMotionVectorsResource(ID3D12Device* InDevice, ID3D12Resource* InMotionVectors, D3D12_RESOURCE_STATES InState)
+    bool CreateMotionVectorsResource(ID3D12Device* InDevice, ID3D12Resource* InMotionVectors,
+                                     D3D12_RESOURCE_STATES InState)
     {
         auto result = motionVectors.CreateBufferResource(InDevice, InMotionVectors, InState);
 

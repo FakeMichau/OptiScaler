@@ -30,7 +30,7 @@ FSRDFeatureDx12::FSRDFeatureDx12(unsigned int InHandleId, NVSDK_NGX_Parameter* I
 }
 
 bool FSRDFeatureDx12::Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCommandList,
-                            NVSDK_NGX_Parameter* InParameters)
+                           NVSDK_NGX_Parameter* InParameters)
 {
     LOG_DEBUG("FSRDFeatureDx12::Init");
 
@@ -122,7 +122,6 @@ void FSRDFeatureDx12::ResourceBarrier(ID3D12GraphicsCommandList* cmdList, ID3D12
     barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
     cmdList->ResourceBarrier(1, &barrier);
 }
-
 
 bool FSRDFeatureDx12::CopyResource(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* source, ID3D12Resource** target,
                                    D3D12_RESOURCE_STATES sourceState)
@@ -384,7 +383,7 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     dntConstants.depthInverted = depthInverted;
     dntConstants.roughnessInNormals = roughnessInNormals;
     DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo, diffuseAlbedo,
-                                motionVectors, specularHitDistance, color, dntConstants);
+                               motionVectors, specularHitDistance, color, dntConstants);
 
     // Final assembly
     signals.input = ffxApiGetResourceDX12(DenoiserTransfer->Color(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
@@ -400,8 +399,7 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
         ffxApiGetResourceDX12(DenoiserTransfer->LinearDepth(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.motionVectors =
         ffxApiGetResourceDX12(DenoiserTransfer->MotionVectors(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
-    denoiserParams.normals =
-        ffxApiGetResourceDX12(DenoiserTransfer->Normals(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    denoiserParams.normals = ffxApiGetResourceDX12(DenoiserTransfer->Normals(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.specularAlbedo =
         ffxApiGetResourceDX12(DenoiserTransfer->SpecularAlbedo(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     denoiserParams.diffuseAlbedo =
@@ -445,8 +443,7 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
         DenoiserCompose->CreateColorResource(Device, denoiserOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
         DcConstants dcConstants;
-        DenoiserCompose->Dispatch(Device, InCommandList, DenoiserTransfer->FusedAlbedo(), denoiserOutput,
-                                    dcConstants);
+        DenoiserCompose->Dispatch(Device, InCommandList, DenoiserTransfer->FusedAlbedo(), denoiserOutput, dcConstants);
     }
 
     return denoiserResult == FFX_API_RETURN_OK;
@@ -624,7 +621,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
                                                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS))
             {
                 OutputScaler->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-                upscaleParams.output = ffxApiGetResourceDX12(OutputScaler->Buffer(), FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
+                upscaleParams.output =
+                    ffxApiGetResourceDX12(OutputScaler->Buffer(), FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
             }
             else
                 upscaleParams.output = ffxApiGetResourceDX12(paramOutput, FFX_API_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -756,7 +754,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
                                        Config::Instance()->DlssReactiveMaskBias.value_or_default(), Bias->Buffer()))
                     {
                         Bias->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-                        upscaleParams.reactive = ffxApiGetResourceDX12(Bias->Buffer(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
+                        upscaleParams.reactive =
+                            ffxApiGetResourceDX12(Bias->Buffer(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
                     }
                 }
                 else
@@ -783,7 +782,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     {
         upscaleParams.color.description.format = ffxResolveTypelessFormat(upscaleParams.color.description.format);
         upscaleParams.depth.description.format = ffxResolveTypelessFormat(upscaleParams.depth.description.format);
-        upscaleParams.motionVectors.description.format = ffxResolveTypelessFormat(upscaleParams.motionVectors.description.format);
+        upscaleParams.motionVectors.description.format =
+            ffxResolveTypelessFormat(upscaleParams.motionVectors.description.format);
         upscaleParams.exposure.description.format = ffxResolveTypelessFormat(upscaleParams.exposure.description.format);
         upscaleParams.transparencyAndComposition.description.format =
             ffxResolveTypelessFormat(upscaleParams.transparencyAndComposition.description.format);
@@ -839,13 +839,15 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     LOG_DEBUG("FrameTimeDeltaInMsec: {0}", upscaleParams.frameTimeDelta);
 
     if (!Config::Instance()->FsrUseFsrInputValues.value_or_default() ||
-        InParameters->Get("FSR.viewSpaceToMetersFactor", &upscaleParams.viewSpaceToMetersFactor) != NVSDK_NGX_Result_Success)
+        InParameters->Get("FSR.viewSpaceToMetersFactor", &upscaleParams.viewSpaceToMetersFactor) !=
+            NVSDK_NGX_Result_Success)
         upscaleParams.viewSpaceToMetersFactor = 0.0f;
 
     upscaleParams.upscaleSize.width = TargetWidth();
     upscaleParams.upscaleSize.height = TargetHeight();
 
-    if (InParameters->Get(NVSDK_NGX_Parameter_DLSS_Pre_Exposure, &upscaleParams.preExposure) != NVSDK_NGX_Result_Success)
+    if (InParameters->Get(NVSDK_NGX_Parameter_DLSS_Pre_Exposure, &upscaleParams.preExposure) !=
+        NVSDK_NGX_Result_Success)
         upscaleParams.preExposure = 1.0f;
 
     if (Version() >= feature_version { 3, 1, 1 } && _velocity != Config::Instance()->FsrVelocity.value_or_default())
@@ -972,7 +974,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         if (useSS)
         {
             if (!RCAS->Dispatch(Device, InCommandList, (ID3D12Resource*) upscaleParams.output.resource,
-                                (ID3D12Resource*) upscaleParams.motionVectors.resource, rcasConstants, OutputScaler->Buffer()))
+                                (ID3D12Resource*) upscaleParams.motionVectors.resource, rcasConstants,
+                                OutputScaler->Buffer()))
             {
                 Config::Instance()->RcasEnabled.set_volatile_value(false);
                 return true;
@@ -1090,7 +1093,7 @@ bool FSRDFeatureDx12::InitFSRD(const NVSDK_NGX_Parameter* InParameters)
     _upscaleContextDesc.flags = 0;
 
 #ifdef _DEBUG
-    //LOG_INFO("Debug checking enabled for upscaling!");
+    // LOG_INFO("Debug checking enabled for upscaling!");
     //_upscaleContextDesc.fpMessage = FfxdLogCallback;
     //_upscaleContextDesc.flags |= FFX_UPSCALE_ENABLE_DEBUG_CHECKING;
 #endif
