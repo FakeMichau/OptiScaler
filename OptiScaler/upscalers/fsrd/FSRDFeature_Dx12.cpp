@@ -423,8 +423,13 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
 
     GetRenderResolution(InParameters, &denoiserParams.renderSize.width, &denoiserParams.renderSize.height);
 
-    lastDeltaTime = (float) GetDeltaTime();
-    denoiserParams.deltaTime = lastDeltaTime;
+    if (InParameters->Get(NVSDK_NGX_Parameter_FrameTimeDeltaInMsec, &denoiserParams.deltaTime) !=
+            NVSDK_NGX_Result_Success ||
+        denoiserParams.deltaTime < 1.0f)
+    {
+        lastDeltaTime = (float) GetDeltaTime();
+        denoiserParams.deltaTime = lastDeltaTime;
+    }
 
     denoiserParams.frameIndex = _frameCount;
 
