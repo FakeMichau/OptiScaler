@@ -485,7 +485,8 @@ inline static void InitNGXParameters(NVSDK_NGX_Parameter* InParams)
         }
 
         InParams->Set("SuperSamplingDenoising.Available", Config::Instance()->DLSSDCopingOnAMD.value_or_default());
-        InParams->Set("SuperSamplingDenoising.FeatureInitResult", 0);
+        InParams->Set("SuperSamplingDenoising.FeatureInitResult",
+                      Config::Instance()->DLSSDCopingOnAMD.value_or_default());
     }
 
     // not ideal as it doesn't take different APIs into account

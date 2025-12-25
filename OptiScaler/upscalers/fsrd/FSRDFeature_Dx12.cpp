@@ -141,25 +141,8 @@ bool FSRDFeatureDx12::CopyResource(ID3D12GraphicsCommandList* cmdList, ID3D12Res
     return result;
 }
 
-bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters)
+bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters)
 {
-    LOG_FUNC();
-
-    if (!IsInited())
-        return false;
-
-    if (!RCAS->IsInit())
-        Config::Instance()->RcasEnabled.set_volatile_value(false);
-
-    if (!OutputScaler->IsInit())
-        Config::Instance()->OutputScalingEnabled.set_volatile_value(false);
-
-    if (_denoiserContext == nullptr || !DenoiserTransfer->IsInit() || !DenoiserCompose->IsInit())
-    {
-        LOG_ERROR("PANIC!");
-        return false;
-    }
-
     // TODO: don't run it on every eval
     FfxApiDenoiserSettings denoiserSettings {};
 
@@ -172,7 +155,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     // Adjust settings
     denoiserSettings.historyRejectionStrength = Config::Instance()->FsrdHistoryRejectionStrength.value_or_default();
-    denoiserSettings.crossBilateralNormalStrength = Config::Instance()->FsrdCrossBilateralNormalStrength.value_or_default();
+    denoiserSettings.crossBilateralNormalStrength =
+        Config::Instance()->FsrdCrossBilateralNormalStrength.value_or_default();
     denoiserSettings.stabilityBias = Config::Instance()->FsrdStabilityBias.value_or_default();
     denoiserSettings.maxRadiance = Config::Instance()->FsrdMaxRadiance.value_or_default();
     denoiserSettings.radianceClipStdK = Config::Instance()->FsrdRadianceClipStdK.value_or_default();
@@ -191,22 +175,11 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     denoiserInputs.header.type = FFX_API_DISPATCH_DESC_INPUT_1_SIGNAL_TYPE_DENOISER;
 
     FfxApiDenoiserSignal signals;
-    ID3D12Resource* color {};
-    static ID3D12Resource* denoiserOutput {};
     ID3D12Resource* output {};
     InParameters->Get(NVSDK_NGX_Parameter_Color, &color);
     InParameters->Get(NVSDK_NGX_Parameter_Output, &output);
-    //CopyResource(InCommandList, color, &denoiserOutput, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    //CopyResource(InCommandList, denoiserOutput, &output, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
     CreateBufferResource(Device, color, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &denoiserOutput);
-
-    if (State::Instance().fsrdSkipDenoiser)
-    {
-        CopyResource(InCommandList, color, &output, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        _frameCount++;
-        return true;
-    }
 
     if (color)
         DenoiserTransfer->CreateColorResource(Device, color, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -230,9 +203,6 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     // return (zNear * zFar) / (zFar - depth * (zFar - zNear));
     // Get data from SL, even when not using SL for DLSSD ?
     bool depthInverted = DepthInverted();
-    float cameraFar = 0.0f;
-    float cameraNear = 0.0f;
-    float cameraFovAngleVertical = 0.0f;
     float cameraAspectRatio = 0.0f;
 
     // Projection Matrix
@@ -240,9 +210,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     auto loadCameraMatrix = [&]()
     {
         XMMATRIX* viewToClipPtr;
-        InParameters->Get("ViewToClipMatrix", reinterpret_cast<void**>(&viewToClipPtr));
+        auto result = InParameters->Get("ViewToClipMatrix", reinterpret_cast<void**>(&viewToClipPtr));
 
-        if (!viewToClipPtr)
+        if (result != NVSDK_NGX_Result_Success || !viewToClipPtr)
             return false;
 
         viewToClip = *viewToClipPtr;
@@ -280,27 +250,30 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
         if (e < 0.0)
         {
-            cameraNear = static_cast<float>((c == 0.0) ? 0.0 : (d / c));
-            cameraFar = static_cast<float>(d / (c + 1.0));
+            lastCameraNear = static_cast<float>((c == 0.0) ? 0.0 : (d / c));
+            lastCameraFar = static_cast<float>(d / (c + 1.0));
         }
         else
         {
-            cameraNear = static_cast<float>((c == 0.0) ? 0.0 : (-d / c));
-            cameraFar = static_cast<float>(-d / (c - 1.0));
+            lastCameraNear = static_cast<float>((c == 0.0) ? 0.0 : (-d / c));
+            lastCameraFar = static_cast<float>(-d / (c - 1.0));
         }
 
         if (depthInverted)
-            std::swap(cameraNear, cameraFar);
+            std::swap(lastCameraNear, lastCameraFar);
 
-        cameraFovAngleVertical = static_cast<float>(2.0 * std::atan(1.0 / b));
+        lastCameraFovAngleVertical = static_cast<float>(2.0 * std::atan(1.0 / b));
         return true;
     };
 
     if (!loadCameraMatrix())
+    {
         LOG_ERROR("Can't get camera parameters");
+        return false;
+    }
 
     // TODO: decide what to do with this, maybe not an issue with the denoiser?
-    //if (cameraNear != 0.0f && cameraFar == 0.0f)
+    // if (cameraNear != 0.0f && cameraFar == 0.0f)
     //{
     //    // A CameraFar value of zero indicates an infinite far plane. Due to a bug in FSR's
     //    // setupDeviceDepthToViewSpaceDepthParams function, CameraFar must always be greater than
@@ -317,9 +290,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     auto loadCameraPosition = [&]()
     {
         XMMATRIX* worldToCameraPtr;
-        InParameters->Get("WorldToViewMatrix", reinterpret_cast<void**>(&worldToCameraPtr));
+        auto result = InParameters->Get("WorldToViewMatrix", reinterpret_cast<void**>(&worldToCameraPtr));
 
-        if (!worldToCameraPtr)
+        if (result != NVSDK_NGX_Result_Success || !worldToCameraPtr)
             return false;
 
         worldToCamera = *worldToCameraPtr;
@@ -356,7 +329,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     else
         LOG_ERROR("Depth missing!");
 
-    // Cyberpunk seems to be sending "2.5D" MVs to DLSSD, with something in alpha that looks like a mask of dynamic objects
+    // Cyberpunk seems to be sending "2.5D" MVs to DLSSD, with something in alpha that looks like a mask of dynamic
+    // objects
     ID3D12Resource* motionVectors;
     InParameters->Get(NVSDK_NGX_Parameter_MotionVectors, &motionVectors); // TODO: those MVs are only 2D, not 2.5D
     if (motionVectors)
@@ -368,8 +342,11 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     InParameters->Get("DLSS.Roughness.Mode", &roughnessInNormals);
 
     ID3D12Resource* roughness = nullptr;
-    if (roughnessInNormals == 0) {
+    if (roughnessInNormals == 0)
+    {
         InParameters->Get(NVSDK_NGX_Parameter_GBuffer_Roughness, &roughness);
+        if (!roughness)
+            LOG_ERROR("Roughness missing!");
     }
 
     ID3D12Resource* normals;
@@ -396,17 +373,19 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     // TODO: if a game only provides Specular Motion Vector Reflections then we are cooked
     ID3D12Resource* specularHitDistance;
     InParameters->Get("DLSSD.SpecularHitDistance", &specularHitDistance);
+    if (!specularHitDistance)
+        LOG_ERROR("Specular Hit Distance missing!");
 
     // Run the resource translation
-    
-    dntConstants.cameraFar = cameraFar;
-    dntConstants.cameraNear = cameraNear;
+
+    dntConstants.cameraFar = lastCameraFar;
+    dntConstants.cameraNear = lastCameraNear;
     dntConstants.depthNonLinear = depthNonLinear == 1;
     dntConstants.depthInverted = depthInverted;
     dntConstants.roughnessInNormals = roughnessInNormals;
     DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo, diffuseAlbedo,
-                               motionVectors, specularHitDistance, color, dntConstants);
-  
+                                motionVectors, specularHitDistance, color, dntConstants);
+
     // Final assembly
     signals.input = ffxApiGetResourceDX12(DenoiserTransfer->Color(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
     signals.output = ffxApiGetResourceDX12(denoiserOutput, FFX_API_RESOURCE_STATE_COMPUTE_READ);
@@ -440,13 +419,14 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     std::swap(cameraPosition, cameraPrevPosition);
 
     denoiserParams.cameraAspectRatio = cameraAspectRatio;
-    denoiserParams.cameraNear = cameraNear;
-    denoiserParams.cameraFar = cameraFar;
-    denoiserParams.cameraFovAngleVertical = cameraFovAngleVertical;
+    denoiserParams.cameraNear = lastCameraNear;
+    denoiserParams.cameraFar = lastCameraFar;
+    denoiserParams.cameraFovAngleVertical = lastCameraFovAngleVertical;
 
     GetRenderResolution(InParameters, &denoiserParams.renderSize.width, &denoiserParams.renderSize.height);
 
-    denoiserParams.deltaTime = (float) GetDeltaTime();
+    lastDeltaTime = (float) GetDeltaTime();
+    denoiserParams.deltaTime = lastDeltaTime;
 
     denoiserParams.frameIndex = _frameCount;
 
@@ -465,10 +445,38 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         DenoiserCompose->CreateColorResource(Device, denoiserOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
         DcConstants dcConstants;
-        DenoiserCompose->Dispatch(Device, InCommandList, DenoiserTransfer->FusedAlbedo(), denoiserOutput, dcConstants);
+        DenoiserCompose->Dispatch(Device, InCommandList, DenoiserTransfer->FusedAlbedo(), denoiserOutput,
+                                    dcConstants);
     }
 
+    return denoiserResult == FFX_API_RETURN_OK;
+}
 
+bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters)
+{
+    LOG_FUNC();
+
+    if (!IsInited())
+        return false;
+
+    if (!RCAS->IsInit())
+        Config::Instance()->RcasEnabled.set_volatile_value(false);
+
+    if (!OutputScaler->IsInit())
+        Config::Instance()->OutputScalingEnabled.set_volatile_value(false);
+
+    if (_denoiserContext == nullptr || !DenoiserTransfer->IsInit() || !DenoiserCompose->IsInit())
+    {
+        LOG_ERROR("PANIC!");
+        return false;
+    }
+
+    bool denoiserResult = false;
+    if (!State::Instance().fsrdSkipDenoiser)
+        denoiserResult = EvaluateDenoiser(InCommandList, InParameters);
+
+    if (!denoiserResult)
+        LOG_WARN("Denoiser failed!");
 
     /// Upscaling
 
@@ -536,7 +544,9 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     ID3D12Resource* paramColor;
 
-    if (composeWithAlbedo)
+    if (!denoiserResult)
+        paramColor = color;
+    else if (Config::Instance()->FsrdComposeWithAlbedo.value_or_default())
         paramColor = DenoiserCompose->Color();
     else
         paramColor = denoiserOutput;
@@ -801,16 +811,16 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     if (DepthInverted())
     {
-        upscaleParams.cameraFar = cameraFar;
-        upscaleParams.cameraNear = cameraNear;
+        upscaleParams.cameraFar = lastCameraFar;
+        upscaleParams.cameraNear = lastCameraNear;
     }
     else
     {
-        upscaleParams.cameraFar = cameraNear;
-        upscaleParams.cameraNear = cameraFar;
+        upscaleParams.cameraFar = lastCameraNear;
+        upscaleParams.cameraNear = lastCameraFar;
     }
 
-    upscaleParams.cameraFovAngleVertical = cameraFovAngleVertical;
+    upscaleParams.cameraFovAngleVertical = lastCameraFovAngleVertical;
 
     if (!Config::Instance()->FsrUseFsrInputValues.value_or_default() ||
         InParameters->Get("FSR.frameTimeDelta", &upscaleParams.frameTimeDelta) != NVSDK_NGX_Result_Success)
@@ -818,7 +828,12 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         if (InParameters->Get(NVSDK_NGX_Parameter_FrameTimeDeltaInMsec, &upscaleParams.frameTimeDelta) !=
                 NVSDK_NGX_Result_Success ||
             upscaleParams.frameTimeDelta < 1.0f)
-            upscaleParams.frameTimeDelta = denoiserParams.deltaTime;
+        {
+            if (!denoiserResult)
+                upscaleParams.frameTimeDelta = (float) GetDeltaTime();
+            else
+                upscaleParams.frameTimeDelta = lastDeltaTime;
+        }
     }
 
     LOG_DEBUG("FrameTimeDeltaInMsec: {0}", upscaleParams.frameTimeDelta);

@@ -14,12 +14,23 @@ class FSRDFeatureDx12 : public FSRDFeature, public IFeature_Dx12
                               ID3D12Resource** OutResource, bool UAV = false, bool depth = false);
     void ResourceBarrier(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* resource,
                          D3D12_RESOURCE_STATES beforeState, D3D12_RESOURCE_STATES afterState);
-    bool CopyResource(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* source,
-                                       ID3D12Resource** target, D3D12_RESOURCE_STATES sourceState);
+    bool CopyResource(ID3D12GraphicsCommandList* cmdList, ID3D12Resource* source, ID3D12Resource** target,
+                      D3D12_RESOURCE_STATES sourceState);
+    bool EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX_Parameter* InParameters);
+
     NVSDK_NGX_Parameter* SetParameters(NVSDK_NGX_Parameter* InParameters);
+
     ID3D12Resource* _buffer;
     DXGI_FORMAT format;
+
     FfxApiFloatCoords3D cameraPrevPosition;
+    float lastDeltaTime {};
+    float lastCameraNear {};
+    float lastCameraFar {};
+    float lastCameraFovAngleVertical {};
+
+    ID3D12Resource* color {}; // DO NOT release
+    ID3D12Resource* denoiserOutput {}; // release when needed
 
   protected:
     std::unique_ptr<DNT_Dx12> DenoiserTransfer = nullptr;
