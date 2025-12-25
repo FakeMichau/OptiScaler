@@ -58,16 +58,9 @@ float3 ScreenSpaceToWorldSpace(float3 screen_space_position, float4x4 invViewPro
 }
 
 float GetNoV(float3 view, float3 normals)
-{
-    // TODO: assumes Normals are already in view space
-    float3 N = normalize(normals * 2.0f - 1.0f);
-        
-    float3 V = normalize(-view);
-    
-    float NoV = dot(-view, normals);
-
-    // TODO: might be wrong, we pass FFX_DENOISER_DISPATCH_NON_GAMMA_ALBEDO so this might need to be done
-    return saturate(dot(N, V));
+{  
+    float NoV = dot(normals, view);
+    return saturate(NoV);
 }
 
 [numthreads(32, 32, 1)]

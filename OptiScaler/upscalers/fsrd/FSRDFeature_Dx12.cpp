@@ -48,6 +48,7 @@ bool FSRDFeatureDx12::Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* In
         RCAS = std::make_unique<RCAS_Dx12>("RCAS", InDevice);
         Bias = std::make_unique<Bias_Dx12>("Bias", InDevice);
         DenoiserTransfer = std::make_unique<DNT_Dx12>("Denoiser Transfer", InDevice);
+        DenoiserCompose = std::make_unique<DC_Dx12>("Denoiser Compose", InDevice);
 
         return true;
     }
@@ -153,7 +154,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     if (!OutputScaler->IsInit())
         Config::Instance()->OutputScalingEnabled.set_volatile_value(false);
 
-    if (_denoiserContext == nullptr || !DenoiserTransfer->IsInit())
+    if (_denoiserContext == nullptr || !DenoiserTransfer->IsInit() || !DenoiserCompose->IsInit())
     {
         LOG_ERROR("PANIC!");
         return false;
@@ -177,6 +178,8 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     denoiserSettings.radianceClipStdK = Config::Instance()->FsrdRadianceClipStdK.value_or_default();
     denoiserSettings.gaussianKernelRelaxation = Config::Instance()->FsrdGaussianKernelRelaxation.value_or_default();
 
+    bool composeWithAlbedo = Config::Instance()->FsrdComposeWithAlbedo.value_or_default();
+
     ffxConfigureDescDenoiserSettings denoiserSettingsDesc = {};
     denoiserSettingsDesc.header.type = FFX_API_CONFIGURE_DESC_TYPE_DENOISER_SETTINGS;
     denoiserSettingsDesc.settings = denoiserSettings;
@@ -189,14 +192,14 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     FfxApiDenoiserSignal signals;
     ID3D12Resource* color {};
-    static ID3D12Resource* middle {};
+    static ID3D12Resource* denoiserOutput {};
     ID3D12Resource* output {};
     InParameters->Get(NVSDK_NGX_Parameter_Color, &color);
     InParameters->Get(NVSDK_NGX_Parameter_Output, &output);
-    //CopyResource(InCommandList, color, &middle, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    //CopyResource(InCommandList, middle, &output, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    //CopyResource(InCommandList, color, &denoiserOutput, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    //CopyResource(InCommandList, denoiserOutput, &output, D3D12_RESOURCE_STATE_COPY_SOURCE);
 
-    CreateBufferResource(Device, color, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &middle);
+    CreateBufferResource(Device, color, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &denoiserOutput);
 
     if (State::Instance().fsrdSkipDenoiser)
     {
@@ -406,7 +409,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
   
     // Final assembly
     signals.input = ffxApiGetResourceDX12(DenoiserTransfer->Color(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
-    signals.output = ffxApiGetResourceDX12(middle, FFX_API_RESOURCE_STATE_COMPUTE_READ);
+    signals.output = ffxApiGetResourceDX12(denoiserOutput, FFX_API_RESOURCE_STATE_COMPUTE_READ);
 
     denoiserInputs.fusedAlbedo =
         ffxApiGetResourceDX12(DenoiserTransfer->FusedAlbedo(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
@@ -457,17 +460,17 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     auto denoiserResult = FfxApiProxy::D3D12_Dispatch(&_denoiserContext, &denoiserParams.header);
 
+    if (denoiserOutput && composeWithAlbedo)
+    {
+        DenoiserCompose->CreateColorResource(Device, denoiserOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+        DcConstants dcConstants;
+        DenoiserCompose->Dispatch(Device, InCommandList, DenoiserTransfer->FusedAlbedo(), denoiserOutput, dcConstants);
+    }
 
 
-    //CopyResource(InCommandList, middle, &output, D3D12_RESOURCE_STATE_COPY_SOURCE);
-    //_frameCount++;
-    //return true;
 
-
-
-
-
-
+    /// Upscaling
 
     struct ffxDispatchDescUpscale upscaleParams = { 0 };
     upscaleParams.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
@@ -532,10 +535,11 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     upscaleParams.commandList = InCommandList;
 
     ID3D12Resource* paramColor;
-    //if (InParameters->Get(NVSDK_NGX_Parameter_Color, &paramColor) != NVSDK_NGX_Result_Success)
-    //    InParameters->Get(NVSDK_NGX_Parameter_Color, (void**) &paramColor);
 
-    paramColor = middle;
+    if (composeWithAlbedo)
+        paramColor = DenoiserCompose->Color();
+    else
+        paramColor = denoiserOutput;
 
     if (paramColor)
     {

@@ -11,7 +11,6 @@
 #include <magic_enum.hpp>
 
 #define DNT_NUM_OF_HEAPS 2
-#define D3D12_INVALID_STATE (D3D12_RESOURCE_STATES) 0xFFFFFFFF
 
 class DNT_Dx12 : public Shader_Dx12
 {

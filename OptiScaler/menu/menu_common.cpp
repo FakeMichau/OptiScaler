@@ -2859,6 +2859,14 @@ bool MenuCommon::RenderMenu()
                                 state.fsrdSkipDenoiser = skipDenoiser;
                             }
                             ShowHelpMarker("TODO: only works with DLAA");
+
+                            ImGui::SameLine(0.0f, 16.0f);
+
+                            if (bool composeWithAlbedo = config->FsrdComposeWithAlbedo.value_or_default();
+                                ImGui::Checkbox("Compose with albedo", &composeWithAlbedo))
+                            {
+                                config->FsrdComposeWithAlbedo = composeWithAlbedo;
+                            }
                         }
                     }
 

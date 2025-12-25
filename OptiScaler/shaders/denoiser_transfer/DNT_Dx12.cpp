@@ -31,6 +31,7 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
                         ID3D12Resource* InSpecularRayLength, ID3D12Resource* InColor,
                         DntConstants InConstants)
 {
+    // TODO: add all the checks
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InDepth == nullptr || linearDepth.rawResource == nullptr)
         return false;
 
@@ -421,6 +422,8 @@ DNT_Dx12::~DNT_Dx12()
     {
         _frameHeaps[i].ReleaseHeaps();
     }
+
+    // TODO: release resources
 
     if (linearDepth.rawResource != nullptr)
     {

@@ -3,6 +3,8 @@
 #include <pch.h>
 #include <d3d12.h>
 
+#define D3D12_INVALID_STATE (D3D12_RESOURCE_STATES) 0xFFFFFFFF
+
 class Shader_Dx12
 {
   protected:
