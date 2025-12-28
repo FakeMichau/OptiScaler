@@ -175,6 +175,7 @@ class State
     // FSRD
     bool fsrdResetHistory = false;
     bool fsrdSkipDenoiser = false;
+    bool fsrdSkipUpscaling = false;
 
     // Linux checks
     bool isRunningOnLinux = false;

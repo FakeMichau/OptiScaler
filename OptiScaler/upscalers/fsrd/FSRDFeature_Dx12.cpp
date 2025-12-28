@@ -49,6 +49,7 @@ bool FSRDFeatureDx12::Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* In
         Bias = std::make_unique<Bias_Dx12>("Bias", InDevice);
         DenoiserTransfer = std::make_unique<DNT_Dx12>("Denoiser Transfer", InDevice);
         DenoiserCompose = std::make_unique<DC_Dx12>("Denoiser Compose", InDevice);
+        DepthScale = std::make_unique<DS_Dx12>("Depth Scale", InDevice);
 
         return true;
     }
@@ -195,12 +196,9 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     int depthNonLinear = 0;
     InParameters->Get("DLSS.Use.HW.Depth", &depthNonLinear);
 
-    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
-    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);
+    //InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
+    //InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);
 
-    // needed to convert to linear
-    // return (zNear * zFar) / (zFar - depth * (zFar - zNear));
-    // Get data from SL, even when not using SL for DLSSD ?
     bool depthInverted = DepthInverted();
     float cameraAspectRatio = 0.0f;
 
@@ -482,6 +480,28 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     /// Upscaling
 
+    if (State::Instance().fsrdSkipUpscaling)
+    {
+        ID3D12Resource* paramColor;
+
+        if (!denoiserResult)
+            paramColor = color;
+        else if (Config::Instance()->FsrdComposeWithAlbedo.value_or_default())
+            paramColor = DenoiserCompose->Color();
+        else
+            paramColor = denoiserOutput;
+
+        ID3D12Resource* paramOutput;
+        if (InParameters->Get(NVSDK_NGX_Parameter_Output, &paramOutput) != NVSDK_NGX_Result_Success)
+            InParameters->Get(NVSDK_NGX_Parameter_Output, (void**) &paramOutput);
+
+        auto state = Config::Instance()->ColorResourceBarrier.value_or(D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        CopyResource(InCommandList, paramColor, &paramOutput, (D3D12_RESOURCE_STATES) state);
+
+        _frameCount++;
+        return true;
+    }
+
     struct ffxDispatchDescUpscale upscaleParams = { 0 };
     upscaleParams.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
 
@@ -652,9 +672,27 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
         return false;
     }
 
+    if (!Config::Instance()->FsrUseFsrInputValues.value_or_default() ||
+        (lastCameraNear == 0.0f && lastCameraFar == 0.0f))
+    {
+        if (DepthInverted())
+        {
+            lastCameraFar = Config::Instance()->FsrCameraNear.value_or_default();
+            lastCameraNear = Config::Instance()->FsrCameraFar.value_or_default();
+        }
+        else
+        {
+            lastCameraFar = Config::Instance()->FsrCameraFar.value_or_default();
+            lastCameraNear = Config::Instance()->FsrCameraNear.value_or_default();
+        }
+    }
+
     ID3D12Resource* paramDepth;
     if (InParameters->Get(NVSDK_NGX_Parameter_Depth, &paramDepth) != NVSDK_NGX_Result_Success)
         InParameters->Get(NVSDK_NGX_Parameter_Depth, (void**) &paramDepth);
+
+    uint32_t depthNonLinear = UINT32_MAX;
+    InParameters->Get("DLSS.Use.HW.Depth", &depthNonLinear);
 
     if (paramDepth)
     {
@@ -664,6 +702,26 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
             ResourceBarrier(InCommandList, paramDepth,
                             (D3D12_RESOURCE_STATES) Config::Instance()->DepthResourceBarrier.value(),
                             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+        // TODO: seems broken, fix
+        if (depthNonLinear == 0 && DepthScale->IsInit())
+        {
+            auto depthDesc = paramDepth->GetDesc();
+            if (DepthScale->CreateBufferResource(Device, paramDepth, depthDesc.Width, depthDesc.Height,
+                                                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE) &&
+                DepthScale->Buffer() != nullptr)
+            {
+                DepthScale->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+                if (DepthScale->Dispatch(Device, InCommandList, paramDepth, DepthScale->Buffer(), DepthInverted(),
+                                         lastCameraFar, lastCameraNear))
+                {
+                    paramDepth = DepthScale->Buffer();
+                }
+
+                DepthScale->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            }
+        }
 
         upscaleParams.depth = ffxApiGetResourceDX12(paramDepth, FFX_API_RESOURCE_STATE_COMPUTE_READ);
     }

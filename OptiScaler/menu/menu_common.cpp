@@ -2859,9 +2859,16 @@ bool MenuCommon::RenderMenu()
                             {
                                 state.fsrdSkipDenoiser = skipDenoiser;
                             }
-                            ShowHelpMarker("TODO: only works with DLAA");
 
                             ImGui::SameLine(0.0f, 16.0f);
+
+                            if (bool skipUpscaling = state.fsrdSkipUpscaling;
+                                ImGui::Checkbox("Skip Upscaling", &skipUpscaling))
+                            {
+                                state.fsrdSkipUpscaling = skipUpscaling;
+                            }
+                            ShowHelpMarker("TODO: only works with DLAA");
+
 
                             if (bool composeWithAlbedo = config->FsrdComposeWithAlbedo.value_or_default();
                                 ImGui::Checkbox("Compose with albedo", &composeWithAlbedo))

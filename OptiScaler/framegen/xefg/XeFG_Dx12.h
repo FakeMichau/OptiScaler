@@ -6,6 +6,7 @@
 #include <proxies/XeFG_Proxy.h>
 
 #include "shaders/depth_invert/DI_Dx12.h"
+#include "shaders/depth_scale/DS_Dx12.h"
 
 #include <xell.h>
 #include <xell_d3d12.h>
@@ -25,6 +26,7 @@ class XeFG_Dx12 : public virtual IFGFeature_Dx12
     std::optional<bool> _haveHudless = std::nullopt;
 
     std::unique_ptr<DI_Dx12> _depthInvert;
+    std::unique_ptr<DS_Dx12> _depthScale;
 
     static void xefgLogCallback(const char* message, xefg_swapchain_logging_level_t level, void* userData);
 

@@ -7,13 +7,17 @@ using namespace DirectX;
 
 struct alignas(256) DSConstants
 {
-    float DepthScale;
+    int depthInverted;
+    float cameraFar;
+    float cameraNear;
 };
 
 inline static std::string shaderCode = R"(
 cbuffer Params : register(b0)
 {
-    float DepthScale;
+    int depthInverted;
+    float cameraFar;
+    float cameraNear;
 };
 
 // Input texture
@@ -24,17 +28,26 @@ RWTexture2D<float> DestinationTexture : register(u0);
 
 // Compute shader thread group size
 [numthreads(16, 16, 1)]
-void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
+void CSMain(uint3 DTid : SV_DispatchThreadID)
 {
-    // The dispatchThreadID.xy are the pixel coordinates
-    uint2 pixelCoord = dispatchThreadID.xy;
+    uint2 pixelId = DTid.xy;
 
-    // Load the pixel value from the source texture
-    float srcColor = SourceTexture.Load(int3(pixelCoord, 0));
-    float normalizedColor = srcColor / DepthScale;
-
-    // Write the pixel value to the destination texture
-    DestinationTexture[pixelCoord] = saturate(normalizedColor);
+    float linearDepth = SourceTexture.Load(int3(pixelId, 0));
+    
+    if (depthInverted)
+    {
+        DestinationTexture[pixelId] = saturate(
+            (cameraFar / linearDepth - 1.0f) / 
+            (cameraFar / cameraNear - 1.0f)
+        );
+    }
+    else
+    {
+        DestinationTexture[pixelId] = saturate(
+            (linearDepth * cameraFar - cameraFar * cameraNear) /
+            (linearDepth * (cameraFar - cameraNear))
+        );
+    }
 }
 )";
 

@@ -127,10 +127,22 @@ bool Sl_Inputs_Dx12::setConstants(const sl::Constants& values, uint32_t frameId)
 
         fgOutput->EvaluateState(State::Instance().currentD3D12Device, fgConstants);
 
-        if (!config->FGEnabled.value_or_default() || !fgOutput->IsActive() || fgOutput->IsPaused())
+        if (!config->FGEnabled.value_or_default())
         {
             LOG_TRACE("FG not active or paused");
             return true;
+        }
+        else
+        {
+            if (!fgOutput->IsActive() && !fgOutput->IsPaused())
+            {
+                fgOutput->Activate();
+            }
+            else if (!fgOutput->IsActive() || fgOutput->IsPaused())
+            {
+                LOG_TRACE("FG not active or paused");
+                return true;
+            }
         }
 
         // Frame data part
@@ -329,10 +341,14 @@ bool Sl_Inputs_Dx12::reportResource(const sl::ResourceTag& tag, ID3D12GraphicsCo
     bool handled = true;
 
     // Map types
-    if (tag.type == sl::kBufferTypeDepth || tag.type == sl::kBufferTypeHiResDepth ||
-        tag.type == sl::kBufferTypeLinearDepth)
+    if (tag.type == sl::kBufferTypeDepth || tag.type == sl::kBufferTypeHiResDepth)
     {
         res.type = FG_ResourceType::Depth;
+        fgOutput->SetResource(&res);
+    }
+    if (tag.type == sl::kBufferTypeLinearDepth)
+    {
+        res.type = FG_ResourceType::LinearDepth;
         fgOutput->SetResource(&res);
     }
     else if (tag.type == sl::kBufferTypeMotionVectors)

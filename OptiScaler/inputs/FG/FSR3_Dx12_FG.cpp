@@ -1332,53 +1332,27 @@ void FSR3FG::SetUpscalerInputs(ID3D12GraphicsCommandList* InCmdList, NVSDK_NGX_P
         if (InParameters->Get(NVSDK_NGX_Parameter_Depth, &paramDepth) != NVSDK_NGX_Result_Success)
             InParameters->Get(NVSDK_NGX_Parameter_Depth, (void**) &paramDepth);
 
+        uint32_t depthNonLinear = UINT32_MAX;
+        InParameters->Get("DLSS.Use.HW.Depth", &depthNonLinear);
+
         if (paramDepth != nullptr)
         {
-            auto done = false;
+            Dx12Resource setResource {};
 
-            if (Config::Instance()->FGEnableDepthScale.value_or_default())
-            {
-                if (DepthScale == nullptr)
-                    DepthScale = new DS_Dx12("Depth Scale", _device);
-
-                if (DepthScale->CreateBufferResource(_device, paramDepth, feature->DisplayWidth(),
-                                                     feature->DisplayHeight(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS) &&
-                    DepthScale->Buffer() != nullptr)
-                {
-                    DepthScale->SetBufferState(InCmdList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-
-                    if (DepthScale->Dispatch(_device, InCmdList, paramDepth, DepthScale->Buffer()))
-                    {
-                        Dx12Resource setResource {};
-                        setResource.type = FG_ResourceType::Depth;
-                        setResource.cmdList = commandList;
-                        setResource.resource = DepthScale->Buffer();
-                        setResource.width = feature->RenderWidth();
-                        setResource.height = feature->RenderHeight();
-                        setResource.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-                        setResource.validity = FG_ResourceValidity::JustTrackCmdlist;
-
-                        fg->SetResource(&setResource);
-
-                        done = true;
-                    }
-                }
-            }
-
-            if (!done)
-            {
-                Dx12Resource setResource {};
+            if (depthNonLinear == 0)
+                setResource.type = FG_ResourceType::LinearDepth;
+            else
                 setResource.type = FG_ResourceType::Depth;
-                setResource.cmdList = commandList;
-                setResource.resource = paramDepth;
-                setResource.width = feature->RenderWidth();
-                setResource.height = feature->RenderHeight();
-                setResource.state = (D3D12_RESOURCE_STATES) Config::Instance()->DepthResourceBarrier.value_or(
-                    D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-                setResource.validity = FG_ResourceValidity::ValidNow;
 
-                fg->SetResource(&setResource);
-            }
+            setResource.cmdList = commandList;
+            setResource.resource = paramDepth;
+            setResource.width = feature->RenderWidth();
+            setResource.height = feature->RenderHeight();
+            setResource.state = (D3D12_RESOURCE_STATES) Config::Instance()->DepthResourceBarrier.value_or(
+                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            setResource.validity = FG_ResourceValidity::ValidNow;
+
+            fg->SetResource(&setResource);
         }
 
         LOG_DEBUG("(FG) copy buffers done, frame: {0}", fg->FrameCount());

@@ -8,6 +8,7 @@
 
 #include <dx12/ffx_api_dx12.h>
 #include <ffx_framegeneration.h>
+#include <shaders/depth_scale/DS_Dx12.h>
 
 class FSRFG_Dx12 : public virtual IFGFeature_Dx12
 {
@@ -23,6 +24,7 @@ class FSRFG_Dx12 : public virtual IFGFeature_Dx12
 
     std::unique_ptr<FT_Dx12> _hudlessTransfer[BUFFER_COUNT];
     std::unique_ptr<FT_Dx12> _uiTransfer[BUFFER_COUNT];
+    std::unique_ptr<DS_Dx12> _depthScale;
 
     ID3D12GraphicsCommandList* _fgCommandList[BUFFER_COUNT] {};
     ID3D12CommandAllocator* _fgCommandAllocator[BUFFER_COUNT] {};

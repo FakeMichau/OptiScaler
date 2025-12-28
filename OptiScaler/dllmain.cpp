@@ -1585,6 +1585,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         spdlog::info("");
         InitFSR4Update();
 
+        // LoadLibraryW(L"C:\\Program Files\\Microsoft PIX\\2509.25\\WinPixGpuCapturer.dll");
+
         // Check for Wine
         spdlog::info("");
         State::Instance().isRunningOnLinux = IsRunningOnWine();

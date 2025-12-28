@@ -986,6 +986,34 @@ bool XeFG_Dx12::SetResource(Dx12Resource* inputResource)
 
     auto& type = inputResource->type;
 
+    if (type == FG_ResourceType::LinearDepth)
+    {
+        if (_depthScale.get() == nullptr)
+            _depthScale = std::make_unique<DS_Dx12>("Depth Scale", _device);
+        
+        if (_depthScale->IsInit())
+        {
+            if (_depthScale->CreateBufferResource(_device, inputResource->resource, inputResource->width,
+                                                  inputResource->height, inputResource->state) &&
+                _depthScale->Buffer() != nullptr)
+            {
+                auto cmdList = (inputResource->cmdList != nullptr) ? inputResource->cmdList : GetUICommandList(fIndex);
+
+                _depthScale->SetBufferState(cmdList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+                if (_depthScale->Dispatch(_device, cmdList, inputResource->GetResource(), _depthScale->Buffer(),
+                                          _constants.flags[FG_Flags::InvertedDepth], _cameraFar[fIndex],
+                                          _cameraNear[fIndex]))
+                {
+                    inputResource->resource = _depthScale->Buffer();
+                    inputResource->type = FG_ResourceType::Depth;
+                }
+
+                _depthScale->SetBufferState(cmdList, inputResource->state);
+            }
+        }
+    }
+
     if (type == FG_ResourceType::HudlessColor)
     {
         if (Config::Instance()->FGDisableHudless.value_or_default())

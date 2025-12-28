@@ -6,7 +6,7 @@
 #include <State.h>
 #include "precompiled/DS_Shader.h"
 
-bool DS_Dx12::CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSource, uint32_t InWidth,
+bool DS_Dx12::CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSource, uint64_t InWidth,
                                    uint32_t InHeight, D3D12_RESOURCE_STATES InState)
 {
     auto resourceFlags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS |
@@ -19,7 +19,7 @@ bool DS_Dx12::CreateBufferResource(ID3D12Device* InDevice, ID3D12Resource* InSou
 
     if (result)
     {
-        _buffer->SetName(L"Upscaled_Depth_Buffer");
+        _buffer->SetName(L"HW Depth");
         _bufferState = InState;
     }
 
@@ -35,7 +35,7 @@ void DS_Dx12::SetBufferState(ID3D12GraphicsCommandList* InCommandList, D3D12_RES
 }
 
 bool DS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InResource,
-                       ID3D12Resource* OutResource)
+                       ID3D12Resource* OutResource, bool depthInverted, float cameraFar, float cameraNear)
 {
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InResource == nullptr || OutResource == nullptr)
         return false;
@@ -64,9 +64,13 @@ bool DS_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdL
     uavDesc.Texture2D.MipSlice = 0;
     InDevice->CreateUnorderedAccessView(OutResource, nullptr, &uavDesc, currentHeap.GetUavCPU(0));
 
-    DSConstants constants {};
+    if (cameraFar != 0.0f && cameraNear != 0.0f && cameraFar < cameraNear)
+        std::swap(cameraFar, cameraNear);
 
-    constants.DepthScale = Config::Instance()->FGDepthScaleMax.value_or_default();
+    DSConstants constants {};
+    constants.depthInverted = depthInverted;
+    constants.cameraFar = cameraFar;
+    constants.cameraNear = cameraNear;
 
     // Copy the updated constant buffer data to the constant buffer resource
     BYTE* pCBDataBegin;
@@ -205,22 +209,22 @@ DS_Dx12::DS_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InNam
         return;
     }
 
-    if (Config::Instance()->UsePrecompiledShaders.value_or_default())
-    {
-        D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
-        computePsoDesc.pRootSignature = _rootSignature;
-        computePsoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-        computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(reinterpret_cast<const void*>(DS_cso), sizeof(DS_cso));
-        auto hr = InDevice->CreateComputePipelineState(&computePsoDesc, __uuidof(ID3D12PipelineState*),
-                                                       (void**) &_pipelineState);
+    //if (Config::Instance()->UsePrecompiledShaders.value_or_default())
+    //{
+    //    D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
+    //    computePsoDesc.pRootSignature = _rootSignature;
+    //    computePsoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+    //    computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(reinterpret_cast<const void*>(DS_cso), sizeof(DS_cso));
+    //    auto hr = InDevice->CreateComputePipelineState(&computePsoDesc, __uuidof(ID3D12PipelineState*),
+    //                                                   (void**) &_pipelineState);
 
-        if (FAILED(hr))
-        {
-            LOG_ERROR("[{0}] CreateComputePipelineState error: {1:X}", _name, hr);
-            return;
-        }
-    }
-    else
+    //    if (FAILED(hr))
+    //    {
+    //        LOG_ERROR("[{0}] CreateComputePipelineState error: {1:X}", _name, hr);
+    //        return;
+    //    }
+    //}
+    //else
     {
         // Compile shader blobs
         ID3DBlob* _recEncodeShader = nullptr;

@@ -29,6 +29,7 @@ struct FG_Constants
 enum FG_ResourceType : uint32_t
 {
     Depth = 0,
+    LinearDepth,
     Velocity,
     HudlessColor,
     UIColor,
