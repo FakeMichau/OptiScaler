@@ -990,7 +990,7 @@ bool XeFG_Dx12::SetResource(Dx12Resource* inputResource)
     {
         if (_depthScale.get() == nullptr)
             _depthScale = std::make_unique<DS_Dx12>("Depth Scale", _device);
-        
+
         if (_depthScale->IsInit())
         {
             if (_depthScale->CreateBufferResource(_device, inputResource->resource, inputResource->width,

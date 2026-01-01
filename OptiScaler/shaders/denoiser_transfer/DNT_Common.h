@@ -13,6 +13,8 @@ struct DntConstants
     float cameraFar;
     float cameraNear;
 
+    float cameraPositionWorld[3];
+
     XMMATRIX InvProjection;
     XMMATRIX InvViewProjection;
     XMMATRIX PrevView;
@@ -27,6 +29,8 @@ cbuffer Params : register(b0)
     float cameraFar;
     float cameraNear;
     
+    float3 cameraPositionWorld;
+    
     matrix InvProjection; // ClipToCamera
     matrix InvViewProjection; // ClipToWorld 
     matrix PrevView; // Prev WorldToCamera
@@ -40,6 +44,7 @@ Texture2D<float3> DiffuseAlbedoInput : register(t4);
 Texture2D<float4> MotionVectorsInput : register(t5);
 Texture2D<float> SpecularRayLengthInput : register(t6);
 Texture2D<float3> ColorInput : register(t7);
+Texture2D<float3> ColorBeforeParticlesInput : register(t8); // TODO: remove
 
 RWTexture2D<float> LinearDepthOutput : register(u0);
 RWTexture2D<float4> PackedNormalsOutput : register(u1);
@@ -48,6 +53,8 @@ RWTexture2D<float4> DiffuseAlbedoOutput : register(u3);
 RWTexture2D<float4> FusedAlbedoOutput : register(u4);
 RWTexture2D<float4> MotionVectorsOutput : register(u5);
 RWTexture2D<float4> ColorOutput : register(u6);
+
+static const float EPSILON = 1e-3;
 
 // Directly from AMD's docs
 float2 NormalToOctahedronUv(float3 N)
@@ -78,10 +85,10 @@ float3 ScreenSpaceToWorldSpace(float3 screen_space_position, float4x4 invViewPro
     return InvProjectPosition(screen_space_position, invViewProj);
 }
 
-float GetNoV(float3 view, float3 normals)
+float GetNoV(float3 worldSpacePos, float3 normal)
 {  
-    float NoV = dot(normals, view);
-    return saturate(NoV);
+    float3 toCameraDirection = normalize(cameraPositionWorld.xyz - worldSpacePos);
+    return clamp(dot(normal, toCameraDirection), EPSILON, 1.0f);
 }
 
 [numthreads(32, 32, 1)]
@@ -105,9 +112,9 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     
     // TODO: take care of infinite far plane
     float3 viewSpacePos = ScreenSpaceToViewSpace(screenUVW, InvProjection);
-    viewSpacePos.z = -viewSpacePos.z; // Correct the funny
-    
-    LinearDepthOutput[pixelId] = clamp(-viewSpacePos.z, cameraNear, cameraFar - 0.1f);
+  
+    // Flip z if camera is looking into the -z direction 
+    LinearDepthOutput[pixelId] = clamp(InvProjection[3][2] * viewSpacePos.z, cameraNear, cameraFar - EPSILON);
     
     float4 normals = NormalsInput.Load(int3(pixelId, 0));
     
@@ -124,12 +131,12 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     float3 specularAlbedo = SpecularAlbedoInput.Load(int3(pixelId, 0));
     float3 diffuseAlbedo = DiffuseAlbedoInput.Load(int3(pixelId, 0));
     
-    // TODO: if depth is linear then this doesn't work
-    float NoV = GetNoV(viewSpacePos, normals.xyz);
+    float3 worldSpacePos = ScreenSpaceToWorldSpace(screenUVW, InvViewProjection);
+    float NoV = GetNoV(worldSpacePos, normals.xyz);
     
     float4 specularAlbedo_NoV = float4(specularAlbedo, NoV);
     float4 diffuseAlbedo_Metallic = float4(diffuseAlbedo, 0); // metalness as 0
-    float3 fusedModulator = max(1e-3, max(specularAlbedo_NoV.xyz, diffuseAlbedo_Metallic.xyz));
+    float3 fusedModulator = max(EPSILON, max(specularAlbedo_NoV.xyz, diffuseAlbedo_Metallic.xyz));
     
     SpecularAlbedoOutput[pixelId] = specularAlbedo_NoV;
     DiffuseAlbedoOutput[pixelId] = diffuseAlbedo_Metallic;
@@ -137,16 +144,16 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     
     // Color
     float3 color = ColorInput.Load(int3(pixelId, 0));
+    float3 colorBeforeParticles = ColorBeforeParticlesInput.Load(int3(pixelId, 0));
     float specularRayLength = SpecularRayLengthInput.Load(int3(pixelId, 0));
+    color /= fusedModulator.xyz;
     
     ColorOutput[pixelId] = float4(color, specularRayLength);
     
     // MVs
     float4 motionVector = MotionVectorsInput.Load(int3(pixelId, 0));
     
-    float3 worldSpacePos = ScreenSpaceToWorldSpace(screenUVW, InvViewProjection);
     float3 prevViewSpacePos = mul(PrevView, float4(worldSpacePos, 1.0f)).xyz;
-    prevViewSpacePos.z = -prevViewSpacePos.z; // Fix the funny
     float depthDiff = (prevViewSpacePos.z - viewSpacePos.z);
     
     MotionVectorsOutput[pixelId] = float4(motionVector.xy, depthDiff, 0.0f);

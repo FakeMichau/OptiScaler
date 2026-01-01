@@ -25,7 +25,7 @@ void DC_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCom
 }
 
 bool DC_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InFusedAlbedo,
-                       ID3D12Resource* InColor, DcConstants InConstants)
+                       ID3D12Resource* InColor, ID3D12Resource* InColorBeforeParticles, DcConstants InConstants)
 {
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InColor == nullptr)
         return false;
@@ -55,6 +55,16 @@ bool DC_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdL
     colorDesc.Texture2D.MipLevels = 1;
 
     InDevice->CreateShaderResourceView(InColor, &colorDesc, currentHeap.GetSrvCPU(1));
+
+    // Color Before Particles
+    auto inColorBeforeParticlesDesc = InColorBeforeParticles->GetDesc();
+    D3D12_SHADER_RESOURCE_VIEW_DESC colorBeforeParticlesDesc = {};
+    colorBeforeParticlesDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    colorBeforeParticlesDesc.Format = Shader_Dx12::TranslateTypelessFormats(inColorBeforeParticlesDesc.Format);
+    colorBeforeParticlesDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    colorBeforeParticlesDesc.Texture2D.MipLevels = 1;
+
+    InDevice->CreateShaderResourceView(InColorBeforeParticles, &colorBeforeParticlesDesc, currentHeap.GetSrvCPU(2));
 
     /// Outputs
 
@@ -126,8 +136,8 @@ DC_Dx12::DC_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InNam
     LOG_DEBUG("{0} start!", _name);
 
     CD3DX12_DESCRIPTOR_RANGE1 descriptorRanges[] = {
-        // 2 SRVs starting at register t0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0, 0),
+        // 3 SRVs starting at register t0, space 0
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0, 0),
 
         // 1 UAV starting at register u0, space 0
         CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0),
@@ -242,7 +252,7 @@ DC_Dx12::DC_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InNam
 
     for (int i = 0; i < DC_NUM_OF_HEAPS; i++)
     {
-        if (!_frameHeaps[i].Initialize(InDevice, 2, 1, 1))
+        if (!_frameHeaps[i].Initialize(InDevice, 3, 1, 1))
         {
             LOG_ERROR("[{0}] Failed to init heap", _name);
             _init = false;

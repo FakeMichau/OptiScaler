@@ -159,9 +159,15 @@ sl::Result StreamlineHooks::hkslSetTag(sl::ViewportHandle& viewport, sl::Resourc
     {
         if (tags[i].resource == nullptr || tags[i].resource->native == nullptr)
         {
-            LOG_TRACE("Resource of type: {} is null, continuing", tags[i].type);
+#ifdef _DEBUG
+            LOG_TRACE("Resource of type: {} is null", tags[i].type);
+#endif
             continue;
         }
+
+#ifdef _DEBUG
+        LOG_TRACE("Game tags resource, type: {}", tags[i].type);
+#endif
 
         // Cyberpunk hudless state fix for RDNA 2
         if (State::Instance().gameQuirks & GameQuirk::CyberpunkHudlessStateOverride &&

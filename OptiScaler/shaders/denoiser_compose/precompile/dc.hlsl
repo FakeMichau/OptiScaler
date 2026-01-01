@@ -4,6 +4,7 @@
 
 Texture2D<float4> FusedAlbedoInput : register(t0);
 Texture2D<float3> ColorInput : register(t1);
+Texture2D<float3> ColorBeforeParticlesInput : register(t2);
 
 RWTexture2D<float4> ColorOutput : register(u0);
 
@@ -14,6 +15,6 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     
     float3 fusedAlbedo = FusedAlbedoInput.Load(int3(pixelId, 0.0f)).xyz;
     float3 color = ColorInput.Load(int3(pixelId, 0.0f)).xyz;
-    fusedAlbedo = fusedAlbedo * fusedAlbedo;
-    ColorOutput[pixelId] = float4(color + fusedAlbedo, 0.0f);
+    color += ColorBeforeParticlesInput.Load(int3(pixelId, 0.0f)).xyz;
+    ColorOutput[pixelId] = float4(color * fusedAlbedo, 0.0f);
 }

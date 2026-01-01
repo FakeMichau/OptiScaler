@@ -354,11 +354,11 @@ class Config
     // FSRD
     CustomOptional<float> FsrdHistoryRejectionStrength { 1.0f };
     CustomOptional<float> FsrdCrossBilateralNormalStrength { 1.0f };
-    CustomOptional<float> FsrdStabilityBias { 0.5f };
+    CustomOptional<float> FsrdStabilityBias { 0.8f };
     CustomOptional<float> FsrdMaxRadiance { 10000.0f };
-    CustomOptional<float> FsrdRadianceClipStdK { 50.0f };
+    CustomOptional<float> FsrdRadianceClipStdK { 500.0f };
     CustomOptional<float> FsrdGaussianKernelRelaxation { 0.0f };
-    CustomOptional<bool> FsrdComposeWithAlbedo { false };
+    CustomOptional<bool> FsrdComposeWithAlbedo { true };
 
     // FSR Common
     CustomOptional<float> FsrVerticalFov { 60.0f };

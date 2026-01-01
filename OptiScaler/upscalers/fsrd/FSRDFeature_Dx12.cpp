@@ -177,6 +177,7 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     FfxApiDenoiserSignal signals;
     ID3D12Resource* output {};
     InParameters->Get(NVSDK_NGX_Parameter_Color, &color);
+    InParameters->Get("DLSSD.ColorBeforeParticles", &colorBeforeParticles); // TODO: make optional
     InParameters->Get(NVSDK_NGX_Parameter_Output, &output);
 
     CreateBufferResource(Device, color, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &denoiserOutput);
@@ -196,8 +197,8 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     int depthNonLinear = 0;
     InParameters->Get("DLSS.Use.HW.Depth", &depthNonLinear);
 
-    //InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
-    //InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);
+    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
+    InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);
 
     bool depthInverted = DepthInverted();
     float cameraAspectRatio = 0.0f;
@@ -281,8 +282,8 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
 
     FfxApiFloatCoords3D cameraPosition; // (PrevPos - CurrentPos)
 
-    // View matrix
-    XMMATRIX worldToCamera {};
+    XMMATRIX worldToCamera {}; // View matrix
+    XMMATRIX viewToWorld {};   // Inverse view matrix
     static XMMATRIX PrevView {};
     auto loadCameraPosition = [&]()
     {
@@ -297,7 +298,7 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
         memcpy(&dntConstants.PrevView, &PrevView, sizeof(dntConstants.PrevView));
         memcpy(&PrevView, &worldToCamera, sizeof(PrevView));
 
-        const XMMATRIX viewToWorld = XMMatrixInverse(nullptr, worldToCamera); // Inverse view matrix
+        viewToWorld = XMMatrixInverse(nullptr, worldToCamera);
 
         const auto position = viewToWorld.r[3];
         const auto right = viewToWorld.r[0];
@@ -315,7 +316,7 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     if (!loadCameraPosition())
         LOG_ERROR("Can't get camera position");
 
-    const XMMATRIX InvViewProjection = dntConstants.InvProjection * XMMatrixInverse(nullptr, worldToCamera);
+    const XMMATRIX InvViewProjection = dntConstants.InvProjection * viewToWorld;
     memcpy(&dntConstants.InvViewProjection, &InvViewProjection, sizeof(dntConstants.InvViewProjection));
 
     ID3D12Resource* depth;
@@ -380,8 +381,10 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     dntConstants.depthNonLinear = depthNonLinear == 1;
     dntConstants.depthInverted = depthInverted;
     dntConstants.roughnessInNormals = roughnessInNormals;
+    memcpy(dntConstants.cameraPositionWorld, &cameraPosition, sizeof(dntConstants.cameraPositionWorld));
+
     DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo, diffuseAlbedo,
-                               motionVectors, specularHitDistance, color, dntConstants);
+                               motionVectors, specularHitDistance, color, colorBeforeParticles, dntConstants);
 
     // Final assembly
     signals.input = ffxApiGetResourceDX12(DenoiserTransfer->Color(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
@@ -446,7 +449,8 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
         DenoiserCompose->CreateColorResource(Device, denoiserOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
         DcConstants dcConstants;
-        DenoiserCompose->Dispatch(Device, InCommandList, DenoiserTransfer->FusedAlbedo(), denoiserOutput, dcConstants);
+        DenoiserCompose->Dispatch(Device, InCommandList, DenoiserTransfer->FusedAlbedo(), denoiserOutput,
+                                  colorBeforeParticles, dcConstants);
     }
 
     return denoiserResult == FFX_API_RETURN_OK;

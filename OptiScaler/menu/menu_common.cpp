@@ -2869,7 +2869,6 @@ bool MenuCommon::RenderMenu()
                             }
                             ShowHelpMarker("TODO: only works with DLAA");
 
-
                             if (bool composeWithAlbedo = config->FsrdComposeWithAlbedo.value_or_default();
                                 ImGui::Checkbox("Compose with albedo", &composeWithAlbedo))
                             {

@@ -209,14 +209,14 @@ DS_Dx12::DS_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InNam
         return;
     }
 
-    //if (Config::Instance()->UsePrecompiledShaders.value_or_default())
+    // if (Config::Instance()->UsePrecompiledShaders.value_or_default())
     //{
-    //    D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
-    //    computePsoDesc.pRootSignature = _rootSignature;
-    //    computePsoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-    //    computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(reinterpret_cast<const void*>(DS_cso), sizeof(DS_cso));
-    //    auto hr = InDevice->CreateComputePipelineState(&computePsoDesc, __uuidof(ID3D12PipelineState*),
-    //                                                   (void**) &_pipelineState);
+    //     D3D12_COMPUTE_PIPELINE_STATE_DESC computePsoDesc = {};
+    //     computePsoDesc.pRootSignature = _rootSignature;
+    //     computePsoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+    //     computePsoDesc.CS = CD3DX12_SHADER_BYTECODE(reinterpret_cast<const void*>(DS_cso), sizeof(DS_cso));
+    //     auto hr = InDevice->CreateComputePipelineState(&computePsoDesc, __uuidof(ID3D12PipelineState*),
+    //                                                    (void**) &_pipelineState);
 
     //    if (FAILED(hr))
     //    {
@@ -224,7 +224,7 @@ DS_Dx12::DS_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InNam
     //        return;
     //    }
     //}
-    //else
+    // else
     {
         // Compile shader blobs
         ID3DBlob* _recEncodeShader = nullptr;

@@ -38,7 +38,7 @@ class DC_Dx12 : public Shader_Dx12
 
   public:
     bool Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InFusedAlbedo,
-                  ID3D12Resource* InColor, DcConstants InConstants);
+                  ID3D12Resource* InColor, ID3D12Resource* InColorBeforeParticles, DcConstants InConstants);
 
     // Color
     bool CreateColorResource(ID3D12Device* InDevice, ID3D12Resource* InColor, D3D12_RESOURCE_STATES InState)
