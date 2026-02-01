@@ -177,8 +177,11 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     FfxApiDenoiserSignal signals;
     ID3D12Resource* output {};
     InParameters->Get(NVSDK_NGX_Parameter_Color, &color);
-    InParameters->Get("DLSSD.ColorBeforeParticles", &colorBeforeParticles); // TODO: make optional
     InParameters->Get(NVSDK_NGX_Parameter_Output, &output);
+
+     // TODO: make optional, cyberprank is misusing this buffer and send just the particles
+    if (InParameters->Get("DLSSD.ColorBeforeParticles", &colorBeforeParticles) != NVSDK_NGX_Result_Success)
+        colorBeforeParticles = nullptr;
 
     CreateBufferResource(Device, color, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &denoiserOutput);
 
@@ -194,8 +197,8 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     denoiserParams.header.type = FFX_API_DISPATCH_DESC_TYPE_DENOISER;
     denoiserParams.header.pNext = &denoiserInputs.header;
 
-    int depthNonLinear = 0;
-    InParameters->Get("DLSS.Use.HW.Depth", &depthNonLinear);
+    if (InParameters->Get("DLSS.Use.HW.Depth", &depthNonLinear) != NVSDK_NGX_Result_Success)
+        depthNonLinear = INT32_MAX;
 
     InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_X, &denoiserParams.jitterOffsets.x);
     InParameters->Get(NVSDK_NGX_Parameter_Jitter_Offset_Y, &denoiserParams.jitterOffsets.y);
@@ -218,7 +221,7 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
         XMMATRIX jitter = XMMatrixTranslation(denoiserParams.jitterOffsets.x, denoiserParams.jitterOffsets.y, 0.0f);
         const XMMATRIX ProjJittered = XMMatrixMultiply(jitter, viewToClip);
         const XMMATRIX inverseViewToClip = XMMatrixInverse(nullptr, ProjJittered);
-        memcpy(&dntConstants.InvProjection, &inverseViewToClip, sizeof(dntConstants.InvProjection));
+        memcpy(dntConstants.InvProjection, &inverseViewToClip, sizeof(dntConstants.InvProjection));
 
         // BUG: Various RTX Remix-based games pass in an identity matrix which is completely useless. No
         // idea why.
@@ -295,7 +298,7 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
 
         worldToCamera = *worldToCameraPtr;
 
-        memcpy(&dntConstants.PrevView, &PrevView, sizeof(dntConstants.PrevView));
+        memcpy(dntConstants.PrevView, &PrevView, sizeof(dntConstants.PrevView));
         memcpy(&PrevView, &worldToCamera, sizeof(PrevView));
 
         viewToWorld = XMMatrixInverse(nullptr, worldToCamera);
@@ -316,11 +319,35 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     if (!loadCameraPosition())
         LOG_ERROR("Can't get camera position");
 
-    const XMMATRIX InvViewProjection = dntConstants.InvProjection * viewToWorld;
-    memcpy(&dntConstants.InvViewProjection, &InvViewProjection, sizeof(dntConstants.InvViewProjection));
+    const XMMATRIX InvViewProjection = XMMATRIX(dntConstants.InvProjection) * viewToWorld;
+    memcpy(dntConstants.InvViewProjection, &InvViewProjection, sizeof(dntConstants.InvViewProjection));
 
     ID3D12Resource* depth;
     InParameters->Get(NVSDK_NGX_Parameter_Depth, &depth);
+
+    // TODO: seems broken, fix
+    if (depthNonLinear == 0 && DepthScale->IsInit() && depth)
+    {
+        auto depthDesc = depth->GetDesc();
+        if (DepthScale->CreateBufferResource(Device, depth, depthDesc.Width, depthDesc.Height,
+                                             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE) &&
+            DepthScale->Buffer() != nullptr)
+        {
+            DepthScale->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+            if (DepthScale->Dispatch(Device, InCommandList, depth, DepthScale->Buffer(), DepthInverted(), lastCameraFar,
+                                     lastCameraNear))
+            {
+                depth = DepthScale->Buffer();
+            }
+
+            DepthScale->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        }
+
+        // Forward HW depth to the upscaler
+        InParameters->Set(NVSDK_NGX_Parameter_Depth, depth);
+        InParameters->Set("DLSS.Use.HW.Depth", 1);
+    }
 
     if (depth)
         DenoiserTransfer->CreateDepthResource(Device, depth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -378,13 +405,11 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
 
     dntConstants.cameraFar = lastCameraFar;
     dntConstants.cameraNear = lastCameraNear;
-    dntConstants.depthNonLinear = depthNonLinear == 1;
-    dntConstants.depthInverted = depthInverted;
     dntConstants.roughnessInNormals = roughnessInNormals;
     memcpy(dntConstants.cameraPositionWorld, &cameraPosition, sizeof(dntConstants.cameraPositionWorld));
 
     DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo, diffuseAlbedo,
-                               motionVectors, specularHitDistance, color, colorBeforeParticles, dntConstants);
+                               motionVectors, specularHitDistance, color, dntConstants);
 
     // Final assembly
     signals.input = ffxApiGetResourceDX12(DenoiserTransfer->Color(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
@@ -695,7 +720,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     if (InParameters->Get(NVSDK_NGX_Parameter_Depth, &paramDepth) != NVSDK_NGX_Result_Success)
         InParameters->Get(NVSDK_NGX_Parameter_Depth, (void**) &paramDepth);
 
-    uint32_t depthNonLinear = UINT32_MAX;
+    int32_t depthNonLinear = UINT32_MAX;
     InParameters->Get("DLSS.Use.HW.Depth", &depthNonLinear);
 
     if (paramDepth)
@@ -708,6 +733,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
                             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
         // TODO: seems broken, fix
+        // Denoiser might not run and fix the depth so needs this here as well
         if (depthNonLinear == 0 && DepthScale->IsInit())
         {
             auto depthDesc = paramDepth->GetDesc();

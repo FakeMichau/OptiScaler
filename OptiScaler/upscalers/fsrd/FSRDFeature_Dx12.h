@@ -29,6 +29,7 @@ class FSRDFeatureDx12 : public FSRDFeature, public IFeature_Dx12
     float lastCameraNear {};
     float lastCameraFar {};
     float lastCameraFovAngleVertical {};
+    int depthNonLinear = INT32_MAX;
 
     ID3D12Resource* color {};                // DO NOT release
     ID3D12Resource* colorBeforeParticles {}; // DO NOT release

@@ -56,11 +56,18 @@ bool DC_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdL
 
     InDevice->CreateShaderResourceView(InColor, &colorDesc, currentHeap.GetSrvCPU(1));
 
-    // Color Before Particles
-    auto inColorBeforeParticlesDesc = InColorBeforeParticles->GetDesc();
+    // Color Before Particles, optional
     D3D12_SHADER_RESOURCE_VIEW_DESC colorBeforeParticlesDesc = {};
     colorBeforeParticlesDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    colorBeforeParticlesDesc.Format = Shader_Dx12::TranslateTypelessFormats(inColorBeforeParticlesDesc.Format);
+    if (InColorBeforeParticles)
+    {
+        auto inColorBeforeParticlesDesc = InColorBeforeParticles->GetDesc();
+        colorBeforeParticlesDesc.Format = Shader_Dx12::TranslateTypelessFormats(inColorBeforeParticlesDesc.Format);
+    }
+    else
+    {
+        colorBeforeParticlesDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    }
     colorBeforeParticlesDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     colorBeforeParticlesDesc.Texture2D.MipLevels = 1;
 

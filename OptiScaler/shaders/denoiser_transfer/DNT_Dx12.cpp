@@ -28,8 +28,7 @@ void DNT_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCo
 bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth,
                         ID3D12Resource* InNormals, ID3D12Resource* InRoughness, ID3D12Resource* InSpecularAlbedo,
                         ID3D12Resource* InDiffuseAlbedo, ID3D12Resource* InMotionVectors,
-                        ID3D12Resource* InSpecularRayLength, ID3D12Resource* InColor,
-                        ID3D12Resource* InColorBeforeParticles, DntConstants InConstants)
+                        ID3D12Resource* InSpecularRayLength, ID3D12Resource* InColor, DntConstants InConstants)
 {
     // TODO: add all the checks
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InDepth == nullptr ||
@@ -63,23 +62,22 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     InDevice->CreateShaderResourceView(InNormals, &normalsDesc, currentHeap.GetSrvCPU(1));
 
     // Roughness (optional if packed into Normals)
-    if (!InConstants.roughnessInNormals)
+    D3D12_SHADER_RESOURCE_VIEW_DESC roughnessDesc = {};
+    roughnessDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    roughnessDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    roughnessDesc.Texture2D.MipLevels = 1;
+
+    if (!InConstants.roughnessInNormals && InRoughness)
     {
         auto inRoughnessDesc = InRoughness->GetDesc();
-
-        D3D12_SHADER_RESOURCE_VIEW_DESC roughnessDesc = {};
-        roughnessDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         roughnessDesc.Format = Shader_Dx12::TranslateTypelessFormats(inRoughnessDesc.Format);
-        roughnessDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        roughnessDesc.Texture2D.MipLevels = 1;
-
-        InDevice->CreateShaderResourceView(InRoughness, &roughnessDesc, currentHeap.GetSrvCPU(2));
     }
     else
     {
-        // Put normals into shader as roughness as dummy data
-        InDevice->CreateShaderResourceView(InNormals, &normalsDesc, currentHeap.GetSrvCPU(2));
+        roughnessDesc.Format = DXGI_FORMAT_R16_FLOAT; // a null resource into the shader
     }
+
+    InDevice->CreateShaderResourceView(InRoughness, &roughnessDesc, currentHeap.GetSrvCPU(2));
 
     // Specular Albedo
     auto inSpecularAlbedoDesc = InSpecularAlbedo->GetDesc();
@@ -112,13 +110,21 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     InDevice->CreateShaderResourceView(InMotionVectors, &motionVectorsDesc, currentHeap.GetSrvCPU(5));
 
     // Specular Ray Length
-    auto inSpecularRayLengthDesc = InSpecularRayLength->GetDesc();
     D3D12_SHADER_RESOURCE_VIEW_DESC specularRayLengthDesc = {};
     specularRayLengthDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    specularRayLengthDesc.Format = Shader_Dx12::TranslateTypelessFormats(inSpecularRayLengthDesc.Format);
     specularRayLengthDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
     specularRayLengthDesc.Texture2D.MipLevels = 1;
 
+    if (InSpecularRayLength)
+    {
+        auto inSpecularRayLengthDesc = InSpecularRayLength->GetDesc();
+        specularRayLengthDesc.Format = Shader_Dx12::TranslateTypelessFormats(inSpecularRayLengthDesc.Format);
+    }
+    else
+    {
+        roughnessDesc.Format = DXGI_FORMAT_R16_FLOAT; // a null resource into the shader
+    }
+    
     InDevice->CreateShaderResourceView(InSpecularRayLength, &specularRayLengthDesc, currentHeap.GetSrvCPU(6));
 
     // Color
@@ -130,16 +136,6 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     colorDesc.Texture2D.MipLevels = 1;
 
     InDevice->CreateShaderResourceView(InColor, &colorDesc, currentHeap.GetSrvCPU(7));
-
-    // Color Before Particles
-    auto inColorBeforeParticlesDesc = InColorBeforeParticles->GetDesc();
-    D3D12_SHADER_RESOURCE_VIEW_DESC colorBeforeParticlesDesc = {};
-    colorBeforeParticlesDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    colorBeforeParticlesDesc.Format = Shader_Dx12::TranslateTypelessFormats(inColorBeforeParticlesDesc.Format);
-    colorBeforeParticlesDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-    colorBeforeParticlesDesc.Texture2D.MipLevels = 1;
-
-    InDevice->CreateShaderResourceView(InColorBeforeParticles, &colorBeforeParticlesDesc, currentHeap.GetSrvCPU(8));
 
     /// Outputs
 
@@ -211,19 +207,6 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
 
     InDevice->CreateUnorderedAccessView(color.rawResource, nullptr, &uavColorDesc, currentHeap.GetUavCPU(6));
 
-    InternalConstants constants {};
-
-    constants.depthNonLinear = InConstants.depthNonLinear;
-    constants.depthInverted = InConstants.depthInverted;
-    constants.cameraFar = InConstants.cameraFar;
-    constants.cameraNear = InConstants.cameraNear;
-    memcpy(constants.cameraPositionWorld, InConstants.cameraPositionWorld, sizeof(constants.cameraPositionWorld));
-    memcpy(&constants.InvProjection, &InConstants.InvProjection, sizeof(constants.InvProjection));
-    memcpy(&constants.InvViewProjection, &InConstants.InvViewProjection, sizeof(constants.InvViewProjection));
-    memcpy(&constants.PrevView, &InConstants.PrevView, sizeof(constants.PrevView));
-
-    constants.roughnessInNormals = InConstants.roughnessInNormals;
-
     // Copy the updated constant buffer data to the constant buffer resource
     BYTE* pCBDataBegin;
     CD3DX12_RANGE readRange(0, 0); // We do not intend to read from this resource on the CPU
@@ -242,12 +225,12 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
         return false;
     }
 
-    memcpy(pCBDataBegin, &constants, sizeof(constants));
+    memcpy(pCBDataBegin, &InConstants, sizeof(InConstants));
     _constantBuffer->Unmap(0, nullptr);
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
     cbvDesc.BufferLocation = _constantBuffer->GetGPUVirtualAddress();
-    cbvDesc.SizeInBytes = sizeof(constants);
+    cbvDesc.SizeInBytes = sizeof(InConstants);
     InDevice->CreateConstantBufferView(&cbvDesc, currentHeap.GetCbvCPU(0));
 
     ID3D12DescriptorHeap* heaps[] = { currentHeap.GetHeapCSU() };
@@ -280,8 +263,8 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
     LOG_DEBUG("{0} start!", _name);
 
     CD3DX12_DESCRIPTOR_RANGE1 descriptorRanges[] = {
-        // 9 SRVs starting at register t0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 9, 0, 0),
+        // 8 SRVs starting at register t0, space 0
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 8, 0, 0),
 
         // 7 UAVs starting at register u0, space 0
         CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 7, 0, 0),
@@ -296,7 +279,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
     CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSigDesc;
     rootSigDesc.Init_1_1(1, &rootParameter);
 
-    D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(InternalConstants));
+    D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(DntConstants));
     auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 
     auto result =
@@ -396,7 +379,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
 
     for (int i = 0; i < DNT_NUM_OF_HEAPS; i++)
     {
-        if (!_frameHeaps[i].Initialize(InDevice, 9, 7, 1))
+        if (!_frameHeaps[i].Initialize(InDevice, 8, 7, 1))
         {
             LOG_ERROR("[{0}] Failed to init heap", _name);
             _init = false;

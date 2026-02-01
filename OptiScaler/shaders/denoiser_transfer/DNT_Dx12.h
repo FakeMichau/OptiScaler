@@ -24,21 +24,6 @@ class DNT_Dx12 : public Shader_Dx12
         void SetBufferState(ID3D12GraphicsCommandList* InCommandList, D3D12_RESOURCE_STATES InState);
     };
 
-    struct alignas(256) InternalConstants
-    {
-        int roughnessInNormals;
-        int depthNonLinear;
-        int depthInverted;
-        float cameraFar;
-        float cameraNear;
-
-        float cameraPositionWorld[3];
-
-        XMMATRIX InvProjection;
-        XMMATRIX InvViewProjection;
-        XMMATRIX PrevView;
-    };
-
     FrameDescriptorHeap _frameHeaps[DNT_NUM_OF_HEAPS];
 
     DNT_Dx12::ResourceWithState linearDepth {};
@@ -58,7 +43,7 @@ class DNT_Dx12 : public Shader_Dx12
     bool Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth,
                   ID3D12Resource* InNormals, ID3D12Resource* InRoughness, ID3D12Resource* InSpecularAlbedo,
                   ID3D12Resource* InDiffuseAlbedo, ID3D12Resource* InMotionVectors, ID3D12Resource* InSpecularRayLength,
-                  ID3D12Resource* InColor, ID3D12Resource* InColorBeforeParticles, DntConstants InConstants);
+                  ID3D12Resource* InColor, DntConstants InConstants);
 
     // Depth
     bool CreateDepthResource(ID3D12Device* InDevice, ID3D12Resource* InDepth, D3D12_RESOURCE_STATES InState)

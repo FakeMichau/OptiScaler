@@ -5,35 +5,36 @@
 #include <DirectXMath.h>
 using namespace DirectX;
 
-struct DntConstants
+struct alignas(16) DntConstants
 {
-    int roughnessInNormals;
-    int depthNonLinear;
-    int depthInverted;
-    float cameraFar;
-    float cameraNear;
+    int roughnessInNormals {};
+    float cameraFar {};
+    float cameraNear {};
+    float _pad0;
 
     float cameraPositionWorld[3];
+    float _pad1;
 
-    XMMATRIX InvProjection;
-    XMMATRIX InvViewProjection;
-    XMMATRIX PrevView;
+    float InvProjection[16];
+    float InvViewProjection[16];
+    float PrevView[16];
 };
+static_assert(sizeof(DntConstants) % 16 == 0);
 
 static std::string dntCode = R"(
 cbuffer Params : register(b0)
 {
     int roughnessInNormals;
-    int depthNonLinear;
-    int depthInverted;
     float cameraFar;
     float cameraNear;
+    float _pad0;
     
     float3 cameraPositionWorld;
+    float _pad1;
     
-    matrix InvProjection; // ClipToCamera
-    matrix InvViewProjection; // ClipToWorld 
-    matrix PrevView; // Prev WorldToCamera
+    float4x4 InvProjection; // ClipToCamera
+    float4x4 InvViewProjection; // ClipToWorld 
+    float4x4 PrevView; // Prev WorldToCamera
 };
 
 Texture2D<float> DepthInput : register(t0);
@@ -44,7 +45,6 @@ Texture2D<float3> DiffuseAlbedoInput : register(t4);
 Texture2D<float4> MotionVectorsInput : register(t5);
 Texture2D<float> SpecularRayLengthInput : register(t6);
 Texture2D<float3> ColorInput : register(t7);
-Texture2D<float3> ColorBeforeParticlesInput : register(t8); // TODO: remove
 
 RWTexture2D<float> LinearDepthOutput : register(u0);
 RWTexture2D<float4> PackedNormalsOutput : register(u1);
@@ -113,7 +113,7 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     // TODO: take care of infinite far plane
     float3 viewSpacePos = ScreenSpaceToViewSpace(screenUVW, InvProjection);
   
-    // Flip z if camera is looking into the -z direction 
+    // Flips z if camera is looking into the -z direction 
     LinearDepthOutput[pixelId] = clamp(InvProjection[3][2] * viewSpacePos.z, cameraNear, cameraFar - EPSILON);
     
     float4 normals = NormalsInput.Load(int3(pixelId, 0));
@@ -144,7 +144,6 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     
     // Color
     float3 color = ColorInput.Load(int3(pixelId, 0));
-    float3 colorBeforeParticles = ColorBeforeParticlesInput.Load(int3(pixelId, 0));
     float specularRayLength = SpecularRayLengthInput.Load(int3(pixelId, 0));
     color /= fusedModulator.xyz;
     
@@ -156,7 +155,7 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     float3 prevViewSpacePos = mul(PrevView, float4(worldSpacePos, 1.0f)).xyz;
     float depthDiff = (prevViewSpacePos.z - viewSpacePos.z);
     
-    MotionVectorsOutput[pixelId] = float4(motionVector.xy, depthDiff, 0.0f);
+    MotionVectorsOutput[pixelId] = float4(motionVector.xy, InvProjection[3][2] * depthDiff, 0.0f);
 }
 )";
 
