@@ -27,8 +27,13 @@ void DC_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCom
 bool DC_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InFusedAlbedo,
                        ID3D12Resource* InColor, ID3D12Resource* InColorBeforeParticles, DcConstants InConstants)
 {
-    if (!_init || InDevice == nullptr || InCmdList == nullptr || InColor == nullptr)
+    if (!_init)
         return false;
+    if (InDevice == nullptr || InCmdList == nullptr || InColor == nullptr || color.rawResource == nullptr)
+    {
+        LOG_ERROR("Invalid parameter!");
+        return false;
+    }
 
     LOG_DEBUG("[{0}] Start!", _name);
 

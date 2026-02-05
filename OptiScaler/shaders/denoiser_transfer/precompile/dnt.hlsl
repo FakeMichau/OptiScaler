@@ -123,6 +123,8 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     float specularRayLength = SpecularRayLengthInput.Load(int3(pixelId, 0));
     color /= fusedModulator.xyz;
     
+    color = min(10000.0f, color); // TODO: Clamp radiance to FsrdMaxRadiance, instead of 10000.0f
+    
     ColorOutput[pixelId] = float4(color, specularRayLength);
     
     // MVs

@@ -18,8 +18,10 @@ struct alignas(16) DntConstants
     float InvProjection[16];
     float InvViewProjection[16];
     float PrevView[16];
+
+    byte _pad2[32];
 };
-static_assert(sizeof(DntConstants) % 16 == 0);
+static_assert(sizeof(DntConstants) % 256 == 0);
 
 static std::string dntCode = R"(
 cbuffer Params : register(b0)
@@ -146,6 +148,8 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     float3 color = ColorInput.Load(int3(pixelId, 0));
     float specularRayLength = SpecularRayLengthInput.Load(int3(pixelId, 0));
     color /= fusedModulator.xyz;
+    
+    color = min(10000.0f, color); // TODO: Clamp radiance to FsrdMaxRadiance, instead of 10000.0f
     
     ColorOutput[pixelId] = float4(color, specularRayLength);
     

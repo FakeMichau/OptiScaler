@@ -408,8 +408,10 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     dntConstants.roughnessInNormals = roughnessInNormals;
     memcpy(dntConstants.cameraPositionWorld, &cameraPosition, sizeof(dntConstants.cameraPositionWorld));
 
-    DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo, diffuseAlbedo,
-                               motionVectors, specularHitDistance, color, dntConstants);
+    bool denoiserTransferResult = DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo, diffuseAlbedo, motionVectors, specularHitDistance, color, dntConstants);
+
+    if (!denoiserTransferResult)
+        return false;
 
     // Final assembly
     signals.input = ffxApiGetResourceDX12(DenoiserTransfer->Color(), FFX_API_RESOURCE_STATE_COMPUTE_READ);
