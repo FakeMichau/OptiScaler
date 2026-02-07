@@ -47,6 +47,7 @@ Texture2D<float3> DiffuseAlbedoInput : register(t4);
 Texture2D<float4> MotionVectorsInput : register(t5);
 Texture2D<float> SpecularRayLengthInput : register(t6);
 Texture2D<float3> ColorInput : register(t7);
+Texture2D<float4> RaysInput : register(t8);
 
 RWTexture2D<float> LinearDepthOutput : register(u0);
 RWTexture2D<float4> PackedNormalsOutput : register(u1);
@@ -147,6 +148,7 @@ void CSMain(uint3 DTid : SV_DispatchThreadID)
     // Color
     float3 color = ColorInput.Load(int3(pixelId, 0));
     float specularRayLength = SpecularRayLengthInput.Load(int3(pixelId, 0));
+    float4 rays = RaysInput.Load(int3(pixelId, 0));
     color /= fusedModulator.xyz;
     
     color = min(10000.0f, color); // TODO: Clamp radiance to FsrdMaxRadiance, instead of 10000.0f

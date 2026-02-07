@@ -12,6 +12,8 @@
 #include <magic_enum_utility.hpp>
 #include <include/d3dx/d3dx12.h>
 #include <detours/detours.h>
+#include <fstream>
+#include <iterator>
 
 #ifndef STDMETHODCALLTYPE
 #include <Unknwn.h> // or <objbase.h> to get STDMETHODCALLTYPE
@@ -52,6 +54,14 @@ typedef void(STDMETHODCALLTYPE* PFN_CopyDescriptorsSimple)(ID3D12Device* This, U
                                                            D3D12_CPU_DESCRIPTOR_HANDLE DestDescriptorRangeStart,
                                                            D3D12_CPU_DESCRIPTOR_HANDLE SrcDescriptorRangeStart,
                                                            D3D12_DESCRIPTOR_HEAP_TYPE DescriptorHeapsType);
+// Device hook for denoiser
+typedef HRESULT(STDMETHODCALLTYPE* PFN_CreateGraphicsPipelineState)(ID3D12Device* This,
+                                                                    const D3D12_GRAPHICS_PIPELINE_STATE_DESC* pDesc,
+                                                                    REFIID riid, _COM_Outptr_ void** ppPipelineState);
+
+typedef HRESULT(STDMETHODCALLTYPE* PFN_LoadGraphicsPipeline)(ID3D12PipelineLibrary1* This, LPCWSTR pName,
+                                                        const D3D12_GRAPHICS_PIPELINE_STATE_DESC* pDesc,
+                                                        REFIID riid, void** ppPipelineState);
 
 // Command list hooks for FG
 typedef void(STDMETHODCALLTYPE* PFN_OMSetRenderTargets)(ID3D12GraphicsCommandList* This,
@@ -82,6 +92,9 @@ typedef void(STDMETHODCALLTYPE* PFN_ExecuteCommandLists)(ID3D12CommandQueue* Thi
 
 typedef ULONG(STDMETHODCALLTYPE* PFN_Release)(ID3D12Resource* This);
 
+// Command list hook for denoiser
+typedef void(STDMETHODCALLTYPE* PFN_SetPipelineState)(ID3D12GraphicsCommandList* This, ID3D12PipelineState *pPipelineState);
+
 // Original method calls for device
 static PFN_CreateRenderTargetView o_CreateRenderTargetView = nullptr;
 static PFN_CreateShaderResourceView o_CreateShaderResourceView = nullptr;
@@ -89,6 +102,8 @@ static PFN_CreateUnorderedAccessView o_CreateUnorderedAccessView = nullptr;
 static PFN_CreateDepthStencilView o_CreateDepthStencilView = nullptr;
 static PFN_CreateConstantBufferView o_CreateConstantBufferView = nullptr;
 static PFN_CreateSampler o_CreateSampler = nullptr;
+static PFN_CreateGraphicsPipelineState o_CreateGraphicsPipelineState = nullptr;
+static PFN_LoadGraphicsPipeline o_LoadGraphicsPipeline = nullptr;
 
 static PFN_CreateDescriptorHeap o_CreateDescriptorHeap = nullptr;
 static PFN_HeapRelease o_HeapRelease = nullptr;
@@ -99,6 +114,7 @@ static PFN_CopyDescriptorsSimple o_CopyDescriptorsSimple = nullptr;
 static PFN_Dispatch o_Dispatch = nullptr;
 static PFN_DrawInstanced o_DrawInstanced = nullptr;
 static PFN_DrawIndexedInstanced o_DrawIndexedInstanced = nullptr;
+static PFN_SetPipelineState o_SetPipelineState = nullptr;
 static PFN_ExecuteBundle o_ExecuteBundle = nullptr;
 static PFN_Close o_Close = nullptr;
 
@@ -153,6 +169,12 @@ bool ResTrack_Dx12::CheckResource(ID3D12Resource* resource)
                       resDesc.Height <= s.currentSwapchainDesc.BufferDesc.Height + 32 &&
                       resDesc.Width >= s.currentSwapchainDesc.BufferDesc.Width - 32 &&
                       resDesc.Width <= s.currentSwapchainDesc.BufferDesc.Width + 32;
+
+        // TODO: narrow down to upscaler input-sized buffers
+        bool cyberprankAmdDenoiser = true;
+        if (cyberprankAmdDenoiser && resDesc.Width == 2293 && resDesc.Height == 960 &&
+            resDesc.Format == DXGI_FORMAT_R16G16B16A16_FLOAT)
+            result = true;
 
         // LOG_TRACK("Resource: {}x{} ({}), Swapchain: {}x{} ({}), Relaxed Result: {}", resDesc.Width, resDesc.Height,
         //           (UINT) resDesc.Format, scDesc.BufferDesc.Width, scDesc.BufferDesc.Height,
@@ -1104,6 +1126,80 @@ void ResTrack_Dx12::hkCopyDescriptorsSimple(ID3D12Device* This, UINT NumDescript
     }
 }
 
+template <> struct std::hash<D3D12_SHADER_BYTECODE>
+{
+    std::size_t operator()(const D3D12_SHADER_BYTECODE& x) const noexcept
+    {
+        return std::hash<std::string_view> {}({ reinterpret_cast<const char*>(x.pShaderBytecode), x.BytecodeLength });
+    }
+};
+
+
+//bool LoadBinaryFile(const char* path, std::vector<uint8_t>& outData)
+//{
+//    std::ifstream file(path, std::ios::binary | std::ios::ate);
+//    if (!file)
+//        return false;
+//
+//    std::streamsize size = file.tellg();
+//    file.seekg(0, std::ios::beg);
+//
+//    outData.resize(size);
+//    return file.read(reinterpret_cast<char*>(outData.data()), size).good();
+//}
+
+bool ResTrack_Dx12::isCyberprankShader(const D3D12_GRAPHICS_PIPELINE_STATE_DESC* pDesc, void** ppPipelineState)
+{
+    const uint64_t TARGET_SHADER_HASH = 0x017624c170a3e307;
+    auto hash = std::hash<D3D12_SHADER_BYTECODE> {};
+
+    // static std::vector<uint8_t> shaderFile;
+    // static auto loadResult =
+    //     LoadBinaryFile("F:\\SteamLibrary\\steamapps\\common\\Cyberpunk 2077\\bin\\x64\\shaderRT.bin", shaderFile);
+    //  && loadResult && pDesc->PS.BytecodeLength == shaderFile.size() &&std::memcmp(pDesc->PS.pShaderBytecode,
+    //  shaderFile.data(), shaderFile.size()) == 0
+
+    if (pDesc && pDesc->RTVFormats[0] == DXGI_FORMAT_R16G16B16A16_FLOAT &&
+        pDesc->RTVFormats[1] == DXGI_FORMAT_R16G16B16A16_FLOAT)
+    {
+        // Check if this PSO uses your Pixel Shader
+        if (hash(pDesc->PS) == TARGET_SHADER_HASH)
+        {
+            _cyberprankRTShaderPSO = (ID3D12PipelineState*) *ppPipelineState;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+HRESULT ResTrack_Dx12::hkCreateGraphicsPipelineState(ID3D12Device* This, const D3D12_GRAPHICS_PIPELINE_STATE_DESC* pDesc,
+                                             REFIID riid, void** ppPipelineState)
+{
+    HRESULT result = o_CreateGraphicsPipelineState(This, pDesc, riid, ppPipelineState);
+
+    if (SUCCEEDED(result) && isCyberprankShader(pDesc, ppPipelineState))
+    {
+        LOG_TRACE("Cyberprank shader found");
+    }
+
+    return result;
+}
+
+HRESULT ResTrack_Dx12::hkLoadGraphicsPipeline(ID3D12PipelineLibrary1* This, LPCWSTR pName,
+                                                             const D3D12_GRAPHICS_PIPELINE_STATE_DESC* pDesc, REFIID riid,
+                                              void** ppPipelineState)
+{
+    auto result = o_LoadGraphicsPipeline(This, pName, pDesc, riid, ppPipelineState);
+
+    if (SUCCEEDED(result) && isCyberprankShader(pDesc, ppPipelineState))
+    {
+        LOG_TRACE("Cyberprank shader found");
+    }
+
+    return result;
+}
+
 #pragma endregion
 
 #pragma region Shader input hooks
@@ -1188,12 +1284,17 @@ void ResTrack_Dx12::hkOMSetRenderTargets(ID3D12GraphicsCommandList* This, UINT N
                                          BOOL RTsSingleHandleToDescriptorRange,
                                          D3D12_CPU_DESCRIPTOR_HANDLE* pDepthStencilDescriptor)
 {
-    if (Config::Instance()->FGHudfixDisableOM.value_or_default() || NumRenderTargetDescriptors == 0 ||
-        pRenderTargetDescriptors == nullptr || !IsHudFixActive() || Hudfix_Dx12::SkipHudlessChecks())
+    bool cyberprankDenoiser = true;
+
+    if (!cyberprankDenoiser)
     {
-        o_OMSetRenderTargets(This, NumRenderTargetDescriptors, pRenderTargetDescriptors,
-                             RTsSingleHandleToDescriptorRange, pDepthStencilDescriptor);
-        return;
+        if (Config::Instance()->FGHudfixDisableOM.value_or_default() || NumRenderTargetDescriptors == 0 ||
+            pRenderTargetDescriptors == nullptr || !IsHudFixActive() || Hudfix_Dx12::SkipHudlessChecks())
+        {
+            o_OMSetRenderTargets(This, NumRenderTargetDescriptors, pRenderTargetDescriptors,
+                                 RTsSingleHandleToDescriptorRange, pDepthStencilDescriptor);
+            return;
+        }
     }
 
     LOG_DEBUG_ONLY("NumRenderTargetDescriptors: {}", NumRenderTargetDescriptors);
@@ -1209,6 +1310,12 @@ void ResTrack_Dx12::hkOMSetRenderTargets(ID3D12GraphicsCommandList* This, UINT N
     }
 
     {
+        {
+            std::lock_guard<std::mutex> lock(_cmdStateMutex);
+            auto& state = g_CmdState[This];
+            state.CurrentRTVs.clear();
+        }
+
         for (size_t i = 0; i < NumRenderTargetDescriptors; i++)
         {
             HeapInfo* heap = nullptr;
@@ -1235,6 +1342,12 @@ void ResTrack_Dx12::hkOMSetRenderTargets(ID3D12GraphicsCommandList* This, UINT N
                     LOG_DEBUG_ONLY("No heap!");
                     continue;
                 }
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(_cmdStateMutex);
+                auto& state = g_CmdState[This];
+                state.CurrentRTVs.push_back(pRenderTargetDescriptors[i]);
             }
 
             auto capturedBuffer = heap->GetByCpuHandle(handle.ptr);
@@ -1367,11 +1480,47 @@ void ResTrack_Dx12::hkSetComputeRootDescriptorTable(ID3D12GraphicsCommandList* T
 
 #pragma region Shader finalizer hooks
 
+bool ResTrack_Dx12::CopyResource(ID3D12GraphicsCommandList* cmdList, ResourceInfo* source, ID3D12Resource** target)
+{
+    auto result = true;
+
+    ResourceBarrier(cmdList, source->buffer, source->state, D3D12_RESOURCE_STATE_COPY_SOURCE);
+
+    if (CreateBufferResource(State::Instance().currentD3D12Device, source, D3D12_RESOURCE_STATE_COPY_DEST, target))
+        cmdList->CopyResource(*target, source->buffer);
+    else
+        result = false;
+
+    ResourceBarrier(cmdList, source->buffer, D3D12_RESOURCE_STATE_COPY_SOURCE, source->state);
+
+    return result;
+}
+
+
 // Capture if render target matches, wait for DrawIndexed
 void ResTrack_Dx12::hkDrawInstanced(ID3D12GraphicsCommandList* This, UINT VertexCountPerInstance, UINT InstanceCount,
                                     UINT StartVertexLocation, UINT StartInstanceLocation)
 {
     o_DrawInstanced(This, VertexCountPerInstance, InstanceCount, StartVertexLocation, StartInstanceLocation);
+
+    auto& state = g_CmdState[This];
+
+    // IS THIS THE SHADER?
+    if (_cyberprankRTShaderPSO == state.CurrentPSO)
+    {
+
+        // YES. GRAB THE RTVs.
+        if (state.CurrentRTVs.size() == 2)
+        {
+            // 0 - sky and stuff
+            // 1 - just some rays
+            auto handle = state.CurrentRTVs[0];
+            auto heap = GetHeapByCpuHandleRTV(handle.ptr);
+            auto rtvResource = heap->GetByCpuHandle(handle.ptr);
+
+            auto result = CopyResource(This, rtvResource, &State::Instance().fsrdRays);
+        }
+    }
 
     if (!IsHudFixActive())
     {
@@ -1489,6 +1638,16 @@ void ResTrack_Dx12::hkDrawIndexedInstanced(ID3D12GraphicsCommandList* This, UINT
 
         shard.map[This].clear();
     }
+}
+
+void ResTrack_Dx12::hkSetPipelineState(ID3D12GraphicsCommandList* This, ID3D12PipelineState* pPipelineState) 
+{
+    {
+        std::lock_guard<std::mutex> lock(_cmdStateMutex);
+        g_CmdState[This].CurrentPSO = pPipelineState;
+    }
+
+    o_SetPipelineState(This, pPipelineState);
 }
 
 void ResTrack_Dx12::hkExecuteBundle(ID3D12GraphicsCommandList* This, ID3D12GraphicsCommandList* pCommandList)
@@ -1695,13 +1854,17 @@ void ResTrack_Dx12::HookCommandList(ID3D12Device* InDevice)
 
             o_ExecuteBundle = (PFN_ExecuteBundle) pVTable[27];
 
+            o_SetPipelineState = (PFN_SetPipelineState) pVTable[25];
+
             if (o_OMSetRenderTargets != nullptr)
             {
                 DetourTransactionBegin();
                 DetourUpdateThread(GetCurrentThread());
 
+                bool cyberprankDenoiser = true;
+
                 // Only needed for hudfix
-                if (State::Instance().activeFgInput == FGInput::Upscaler)
+                if (cyberprankDenoiser || State::Instance().activeFgInput == FGInput::Upscaler)
                 {
                     if (o_OMSetRenderTargets != nullptr)
                         DetourAttach(&(PVOID&) o_OMSetRenderTargets, hkOMSetRenderTargets);
@@ -1721,6 +1884,9 @@ void ResTrack_Dx12::HookCommandList(ID3D12Device* InDevice)
                     if (o_Dispatch != nullptr)
                         DetourAttach(&(PVOID&) o_Dispatch, hkDispatch);
                 }
+
+                if (cyberprankDenoiser && o_SetPipelineState != nullptr)
+                    DetourAttach(&(PVOID&) o_SetPipelineState, hkSetPipelineState);
 
                 if (o_Close != nullptr)
                     DetourAttach(&(PVOID&) o_Close, hkClose);
@@ -1807,9 +1973,42 @@ void ResTrack_Dx12::HookDevice(ID3D12Device* device)
     o_CopyDescriptors = (PFN_CopyDescriptors) pVTable[23];
     o_CopyDescriptorsSimple = (PFN_CopyDescriptorsSimple) pVTable[24];
 
+    // Denoiser
+    o_CreateGraphicsPipelineState = (PFN_CreateGraphicsPipelineState) pVTable[10];
+
+    ID3D12Device1* device1 = nullptr;
+    HRESULT hr = realDevice->QueryInterface(IID_PPV_ARGS(&device1));
+    if (SUCCEEDED(hr))
+    {
+        ID3D12PipelineLibrary* library = nullptr;
+        auto result = device1->CreatePipelineLibrary(nullptr, 0, IID_PPV_ARGS(&library));
+
+        if (SUCCEEDED(result))
+        {
+            PVOID* pVTableLibrary = *(PVOID**) library;
+            o_LoadGraphicsPipeline = (PFN_LoadGraphicsPipeline) pVTableLibrary[9];
+
+            DetourTransactionBegin();
+            DetourUpdateThread(GetCurrentThread());
+
+            if (o_LoadGraphicsPipeline != nullptr)
+                DetourAttach(&(PVOID&) o_LoadGraphicsPipeline, hkLoadGraphicsPipeline);
+
+            DetourTransactionCommit();
+
+            library->Release();
+        }
+
+        device1->Release();
+    }
+
+    auto o_CreatePipelineLibrary = pVTable[47];
+
     // Apply the detour
     // Only needed for Hudfix
-    if (o_CreateDescriptorHeap != nullptr && State::Instance().activeFgInput == FGInput::Upscaler)
+    bool cyberprankAmdDenoiser = true;
+    bool optiFg = State::Instance().activeFgInput == FGInput::Upscaler;
+    if (o_CreateDescriptorHeap != nullptr && (optiFg || cyberprankAmdDenoiser))
     {
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
@@ -1826,11 +2025,14 @@ void ResTrack_Dx12::HookDevice(ID3D12Device* device)
         if (o_CreateUnorderedAccessView != nullptr)
             DetourAttach(&(PVOID&) o_CreateUnorderedAccessView, hkCreateUnorderedAccessView);
 
-        if (o_CopyDescriptors != nullptr)
+        if (optiFg && o_CopyDescriptors != nullptr)
             DetourAttach(&(PVOID&) o_CopyDescriptors, hkCopyDescriptors);
 
-        if (o_CopyDescriptorsSimple != nullptr)
+        if (optiFg && o_CopyDescriptorsSimple != nullptr)
             DetourAttach(&(PVOID&) o_CopyDescriptorsSimple, hkCopyDescriptorsSimple);
+
+        if (cyberprankAmdDenoiser && o_CreateGraphicsPipelineState != nullptr)
+            DetourAttach(&(PVOID&) o_CreateGraphicsPipelineState, hkCreateGraphicsPipelineState);
 
         DetourTransactionCommit();
     }
@@ -1843,11 +2045,15 @@ void ResTrack_Dx12::HookDevice(ID3D12Device* device)
     //     HookCommandList(device);
 
     // Only needed for Hudfix
-    if (State::Instance().activeFgInput == FGInput::Upscaler)
+    if (State::Instance().activeFgInput == FGInput::Upscaler || cyberprankAmdDenoiser)
     {
-        HookToQueue(device);
+        if (!cyberprankAmdDenoiser)
+        {
+            HookResource(device);
+            HookToQueue(device);
+        }
+        
         HookCommandList(device);
-        HookResource(device);
     }
 }
 

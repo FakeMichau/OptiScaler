@@ -176,6 +176,7 @@ class State
     bool fsrdResetHistory = false;
     bool fsrdSkipDenoiser = false;
     bool fsrdSkipUpscaling = false;
+    ID3D12Resource* fsrdRays = nullptr;
 
     // Linux checks
     bool isRunningOnLinux = false;

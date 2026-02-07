@@ -408,7 +408,17 @@ bool FSRDFeatureDx12::EvaluateDenoiser(ID3D12GraphicsCommandList* InCommandList,
     dntConstants.roughnessInNormals = roughnessInNormals;
     memcpy(dntConstants.cameraPositionWorld, &cameraPosition, sizeof(dntConstants.cameraPositionWorld));
 
-    bool denoiserTransferResult = DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo, diffuseAlbedo, motionVectors, specularHitDistance, color, dntConstants);
+    if (State::Instance().fsrdRays)
+        ResourceBarrier(InCommandList, State::Instance().fsrdRays, D3D12_RESOURCE_STATE_COPY_DEST,
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    bool denoiserTransferResult =
+        DenoiserTransfer->Dispatch(Device, InCommandList, depth, normals, roughness, specularAlbedo, diffuseAlbedo,
+                                   motionVectors, specularHitDistance, color, State::Instance().fsrdRays, dntConstants);
+
+    if (State::Instance().fsrdRays)
+        ResourceBarrier(InCommandList, State::Instance().fsrdRays,
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
 
     if (!denoiserTransferResult)
         return false;
@@ -503,7 +513,7 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
     }
 
     bool denoiserResult = false;
-    if (!State::Instance().fsrdSkipDenoiser)
+    //if (!State::Instance().fsrdSkipDenoiser)
         denoiserResult = EvaluateDenoiser(InCommandList, InParameters);
 
     if (!denoiserResult)
@@ -597,7 +607,12 @@ bool FSRDFeatureDx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_N
 
     ID3D12Resource* paramColor;
 
-    if (!denoiserResult)
+    if (State::Instance().fsrdSkipDenoiser && denoiserResult)
+        if (Config::Instance()->OverrideSharpness.value_or_default() && State::Instance().fsrdRays)
+            paramColor = State::Instance().fsrdRays;
+        else
+            paramColor = DenoiserTransfer->Color(); // denoiser input
+    else if (!denoiserResult)
         paramColor = color;
     else if (Config::Instance()->FsrdComposeWithAlbedo.value_or_default())
         paramColor = DenoiserCompose->Color();

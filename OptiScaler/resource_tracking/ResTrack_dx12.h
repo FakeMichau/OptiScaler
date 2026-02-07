@@ -270,11 +270,20 @@ class ResTrack_Dx12
     inline static std::mutex _drawMutex;
 
     inline static std::mutex _resourceCommandListMutex;
+    inline static std::mutex _cmdStateMutex;
     inline static std::unordered_map<FG_ResourceType, ID3D12GraphicsCommandList*> _resourceCommandList[BUFFER_COUNT];
 
     inline static ULONG64 _lastHudlessFrame = 0;
     inline static std::mutex _hudlessMutex;
     inline static void* _hudlessMutexQueue = nullptr;
+
+    struct CmdListState
+    {
+        ID3D12PipelineState* CurrentPSO = nullptr;
+        std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> CurrentRTVs;
+    };
+    inline static std::unordered_map<ID3D12GraphicsCommandList*, CmdListState> g_CmdState;
+    inline static ID3D12PipelineState* _cyberprankRTShaderPSO = nullptr;
 
     static bool IsHudFixActive();
 
@@ -290,6 +299,19 @@ class ResTrack_Dx12
                                         D3D12_CPU_DESCRIPTOR_HANDLE SrcDescriptorRangeStart,
                                         D3D12_DESCRIPTOR_HEAP_TYPE DescriptorHeapsType);
 
+    static bool isCyberprankShader(const D3D12_GRAPHICS_PIPELINE_STATE_DESC* pDesc, void** ppPipelineState);
+
+    static HRESULT hkCreateGraphicsPipelineState(ID3D12Device* This, const D3D12_GRAPHICS_PIPELINE_STATE_DESC* pDesc,
+                                                 REFIID riid, void** ppPipelineState);
+
+    static HRESULT hkLoadGraphicsPipeline(ID3D12PipelineLibrary1* This, LPCWSTR pName,
+                                   const D3D12_GRAPHICS_PIPELINE_STATE_DESC* pDesc, REFIID riid,
+                                          void** ppPipelineState);
+
+    static HRESULT hkLoadPipeline(ID3D12PipelineLibrary1* This, LPCWSTR pName,
+                                 const D3D12_PIPELINE_STATE_STREAM_DESC* pDesc,
+                           REFIID riid, void** ppPipelineState);
+
     static void hkSetGraphicsRootDescriptorTable(ID3D12GraphicsCommandList* This, UINT RootParameterIndex,
                                                  D3D12_GPU_DESCRIPTOR_HANDLE BaseDescriptor);
     static void hkOMSetRenderTargets(ID3D12GraphicsCommandList* This, UINT NumRenderTargetDescriptors,
@@ -303,6 +325,7 @@ class ResTrack_Dx12
                                 UINT StartVertexLocation, UINT StartInstanceLocation);
     static void hkDrawIndexedInstanced(ID3D12GraphicsCommandList* This, UINT IndexCountPerInstance, UINT InstanceCount,
                                        UINT StartIndexLocation, INT BaseVertexLocation, UINT StartInstanceLocation);
+    static void hkSetPipelineState(ID3D12GraphicsCommandList* This, ID3D12PipelineState* pPipelineState);
     static void hkDispatch(ID3D12GraphicsCommandList* This, UINT ThreadGroupCountX, UINT ThreadGroupCountY,
                            UINT ThreadGroupCountZ);
 
@@ -341,6 +364,8 @@ class ResTrack_Dx12
 
     static void ResourceBarrier(ID3D12GraphicsCommandList* InCommandList, ID3D12Resource* InResource,
                                 D3D12_RESOURCE_STATES InBeforeState, D3D12_RESOURCE_STATES InAfterState);
+
+    static bool CopyResource(ID3D12GraphicsCommandList* cmdList, ResourceInfo* source, ID3D12Resource** target);
 
     static SIZE_T GetGPUHandle(ID3D12Device* This, SIZE_T cpuHandle, D3D12_DESCRIPTOR_HEAP_TYPE type);
     static SIZE_T GetCPUHandle(ID3D12Device* This, SIZE_T gpuHandle, D3D12_DESCRIPTOR_HEAP_TYPE type);

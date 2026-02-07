@@ -243,6 +243,10 @@ struct AmdExtFfxApi : public IAmdExtFfxApi
             LOG_ERROR("Skipping update for VK Swapchain");
             return E_INVALIDARG;
 
+        case FFXStructType::Denoiser:
+            LOG_INFO("Trying to update denoiser");
+            break;
+
         default:
             LOG_INFO("Trying to update something???");
         }

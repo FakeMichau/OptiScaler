@@ -28,7 +28,8 @@ void DNT_Dx12::ResourceWithState::SetBufferState(ID3D12GraphicsCommandList* InCo
 bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmdList, ID3D12Resource* InDepth,
                         ID3D12Resource* InNormals, ID3D12Resource* InRoughness, ID3D12Resource* InSpecularAlbedo,
                         ID3D12Resource* InDiffuseAlbedo, ID3D12Resource* InMotionVectors,
-                        ID3D12Resource* InSpecularRayLength, ID3D12Resource* InColor, DntConstants InConstants)
+                        ID3D12Resource* InSpecularRayLength, ID3D12Resource* InColor, ID3D12Resource* InRays,
+                        DntConstants InConstants)
 {
     // TODO: add all the checks
     if (!_init || InDevice == nullptr || InCmdList == nullptr || InDepth == nullptr ||
@@ -136,6 +137,24 @@ bool DNT_Dx12::Dispatch(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCmd
     colorDesc.Texture2D.MipLevels = 1;
 
     InDevice->CreateShaderResourceView(InColor, &colorDesc, currentHeap.GetSrvCPU(7));
+
+    // Rays, cyberprank
+    D3D12_SHADER_RESOURCE_VIEW_DESC raysDesc = {};
+    raysDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    raysDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    raysDesc.Texture2D.MipLevels = 1;
+
+    if (InRays)
+    {
+        auto inRaysDesc = InRays->GetDesc();
+        raysDesc.Format = Shader_Dx12::TranslateTypelessFormats(inRaysDesc.Format);
+    }
+    else
+    {
+        raysDesc.Format = DXGI_FORMAT_R16_FLOAT; // a null resource into the shader
+    }
+
+    InDevice->CreateShaderResourceView(InRays, &raysDesc, currentHeap.GetSrvCPU(8));
 
     /// Outputs
 
@@ -263,8 +282,8 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
     LOG_DEBUG("{0} start!", _name);
 
     CD3DX12_DESCRIPTOR_RANGE1 descriptorRanges[] = {
-        // 8 SRVs starting at register t0, space 0
-        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 8, 0, 0),
+        // 9 SRVs starting at register t0, space 0
+        CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 9, 0, 0),
 
         // 7 UAVs starting at register u0, space 0
         CD3DX12_DESCRIPTOR_RANGE1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 7, 0, 0),
@@ -379,7 +398,7 @@ DNT_Dx12::DNT_Dx12(std::string InName, ID3D12Device* InDevice) : Shader_Dx12(InN
 
     for (int i = 0; i < DNT_NUM_OF_HEAPS; i++)
     {
-        if (!_frameHeaps[i].Initialize(InDevice, 8, 7, 1))
+        if (!_frameHeaps[i].Initialize(InDevice, 9, 7, 1))
         {
             LOG_ERROR("[{0}] Failed to init heap", _name);
             _init = false;
